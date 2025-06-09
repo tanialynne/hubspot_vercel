@@ -1,5 +1,3 @@
-const stripe = require('stripe')(process.env.STRIPE_STAGE_SECRET_KEY);
-
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -12,6 +10,8 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).send('Method Not Allowed');
   }
+
+  const stripe = require('stripe')(process.env.STRIPE_STAGE_SECRET_KEY);
 
   try {
     const { firstName, lastName, email, phone, withBump } = req.body;
