@@ -93,7 +93,6 @@ export default async function handler(req, res) {
         baseProductId,
         bumpProductId: withBump ? bumpProductId : ''
       }
-
     });
 
     return res.status(200).json({ clientSecret: paymentIntent.client_secret });
