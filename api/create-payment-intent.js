@@ -1,15 +1,23 @@
 const stripe = require('stripe')(process.env.STRIPE_STAGE_SECRET_KEY);  
 
 module.exports = async (req, res) => {
+  // CORS headers for all requests
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
 
+  // Handle preflight requests with explicit headers
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    res.writeHead(200, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Methods": "POST, OPTIONS"
+    });
+    return res.end();
   }
-  if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
 
+  if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
+  
   try {
     // Parse body manually because Vercel doesn't auto-parse JSON in serverless
     const body = await new Promise((resolve, reject) => {
