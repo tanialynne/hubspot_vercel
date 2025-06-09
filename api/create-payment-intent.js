@@ -29,7 +29,9 @@ export default async function handler(req, res) {
       basePrice = 2700,
       bumpPrice = 4900,
       successUrl = "https://yourdomain.com/success",
-      cancelUrl = "https://yourdomain.com/cancel"
+      cancelUrl = "https://yourdomain.com/cancel",
+      baseLabel = "Main Product",
+      bumpLabel = "Order Bump Product"
     } = req.body;
 
     console.log("📩 Incoming data:", req.body);
@@ -47,7 +49,7 @@ export default async function handler(req, res) {
         price_data: {
           currency: 'usd',
           product_data: {
-            name: 'Main Product'
+            name: baseLabel
           },
           unit_amount: basePrice
         },
@@ -60,7 +62,7 @@ export default async function handler(req, res) {
         price_data: {
           currency: 'usd',
           product_data: {
-            name: 'Order Bump Product'
+            name: bumpLabel
           },
           unit_amount: bumpPrice
         },
@@ -72,11 +74,13 @@ export default async function handler(req, res) {
       amount,
       currency: 'usd',
       customer: customer.id,
-      description: withBump ? 'Main + Order Bump' : 'Main Only',
+      description: withBump ? `${baseLabel} + ${bumpLabel}` : baseLabel,
       metadata: {
         withBump: withBump.toString(),
         basePrice: basePrice.toString(),
         bumpPrice: bumpPrice.toString(),
+        baseLabel,
+        bumpLabel,
         email,
         name: `${firstName} ${lastName}`
       }
