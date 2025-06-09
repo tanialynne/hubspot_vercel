@@ -1,47 +1,37 @@
-const stripe = require('stripe')(process.env.STRIPE_STAGE_SECRET_KEY);
+import Stripe from 'stripe';
 
-module.exports = async (req, res) => {
+const stripe = new Stripe(process.env.STRIPE_STAGE_SECRET_KEY, {
+  apiVersion: '2022-11-15',
+});
+
+export default async function handler(req, res) {
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    return res.status(200).end();
+  }
+
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
   if (req.method !== 'POST') {
-    return res.status(405).send('Method Not Allowed');
+    return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
   try {
-    let body = req.body;
-
-    // Fallback to manual parsing if req.body is undefined
-    if (!body || Object.keys(body).length === 0) {
-      body = await new Promise((resolve, reject) => {
-        let data = '';
-        req.on('data', chunk => (data += chunk));
-        req.on('end', () => resolve(JSON.parse(data)));
-        req.on('error', reject);
-      });
-    }
-
-    const { firstName, lastName, email, phone, withBump } = body;
-
-    console.log('📩 Incoming data:', body);
+    const { firstName, lastName, email, phone, withBump } = req.body;
 
     const customer = await stripe.customers.create({
       name: `${firstName} ${lastName}`,
       email,
-      phone,
+      phone
     });
-    console.log('👤 Created customer:', customer.id);
 
     const basePrice = 2700;
     const bumpPrice = 4900;
     const amount = withBump ? basePrice + bumpPrice : basePrice;
-
-    console.log('💵 Total amount (cents):', amount);
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
@@ -51,14 +41,13 @@ module.exports = async (req, res) => {
       metadata: {
         withBump: withBump.toString(),
         email,
-        name: `${firstName} ${lastName}`,
-      },
+        name: `${firstName} ${lastName}`
+      }
     });
 
-    console.log('✅ PaymentIntent created:', paymentIntent.id);
     return res.status(200).json({ clientSecret: paymentIntent.client_secret });
   } catch (err) {
-    console.error('❌ Error in /create-payment-intent:', err);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    console.error('❌ Stripe error:', err);
+    return res.status(500).json({ error: 'Internal Server Error', details: err.message });
   }
-};
+}
