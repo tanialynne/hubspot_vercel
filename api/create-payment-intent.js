@@ -31,8 +31,13 @@ export default async function handler(req, res) {
       successUrl = "https://yourdomain.com/success",
       cancelUrl = "https://yourdomain.com/cancel",
       baseLabel = "Main Product",
-      bumpLabel = "Order Bump Product"
+      bumpLabel = "Order Bump Product",
+      basePriceId,
+      bumpPriceId,
+      baseProductId,
+      bumpProductId
     } = req.body;
+
 
     console.log("📩 Incoming data:", req.body);
 
@@ -82,8 +87,13 @@ export default async function handler(req, res) {
         baseLabel,
         bumpLabel,
         email,
-        name: `${firstName} ${lastName}`
+        name: `${firstName} ${lastName}`,
+        basePriceId,
+        bumpPriceId: withBump ? bumpPriceId : '',
+        baseProductId,
+        bumpProductId: withBump ? bumpProductId : ''
       }
+
     });
 
     return res.status(200).json({ clientSecret: paymentIntent.client_secret });
