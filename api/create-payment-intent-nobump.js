@@ -56,7 +56,7 @@ export default async function handler(req, res) {
     ];
 
     const paymentIntent = await stripe.paymentIntents.create({
-      basePrice,
+      amount: basePrice,
       currency: 'usd',
       customer: customer.id,
       description: baseLabel,
@@ -64,7 +64,8 @@ export default async function handler(req, res) {
         basePrice: basePrice.toString(),
         baseLabel,
         email,
-        name: `${firstName} ${lastName}`,
+        firstname: firstName,
+        lastname: lastName,
         basePriceId,
         baseProductId
       }
