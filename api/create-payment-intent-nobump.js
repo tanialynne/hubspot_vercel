@@ -1,9 +1,6 @@
 import Stripe from 'stripe';
-const stripe = new Stripe(process.env.STRIPE_STAGE_SECRET_KEY, {
-  apiVersion: '2022-11-15',
-});
 
-export default async function handler(req, res) {
+export default async function handler(req, res) {    
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -30,11 +27,20 @@ export default async function handler(req, res) {
       cancelUrl = "https://yourdomain.com/cancel",
       baseLabel = "Main Product",     
       basePriceId,
-      baseProductId
+      baseProductId, 
+      mode = "stage"
     } = req.body;
 
-
     console.log("📩 Incoming data:", req.body);
+
+    const stripeSecretKey =
+    mode === 'live'
+      ? process.env.STRIPE_LIVE_SECRET_KEY
+      : process.env.STRIPE_STAGE_SECRET_KEY;
+
+    const stripe = new Stripe(stripeSecretKey, {
+      apiVersion: '2022-11-15',
+    });  
 
     const customer = await stripe.customers.create({
       name: `${firstName} ${lastName}`,
