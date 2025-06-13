@@ -1,9 +1,7 @@
 import Stripe from 'stripe';
-const stripe = new Stripe(process.env.STRIPE_STAGE_SECRET_KEY, {
-  apiVersion: '2022-11-15',
-});
 
 export default async function handler(req, res) {
+  // CORS + Preflight
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -25,7 +23,7 @@ export default async function handler(req, res) {
       lastName,
       email,
       phone,
-      withBump,
+      withBump = false,
       basePrice = 2700,
       bumpPrice = 4900,
       successUrl = "https://yourdomain.com/success",
@@ -35,46 +33,33 @@ export default async function handler(req, res) {
       basePriceId,
       bumpPriceId,
       baseProductId,
-      bumpProductId
+      bumpProductId,
+      mode = "stage" // 'stage' or 'live'
     } = req.body;
-
 
     console.log("📩 Incoming data:", req.body);
 
+    // 🔁 Choose correct Stripe secret key
+    const stripeSecretKey =
+      mode === 'live'
+        ? process.env.STRIPE_LIVE_SECRET_KEY
+        : process.env.STRIPE_STAGE_SECRET_KEY;
+
+    const stripe = new Stripe(stripeSecretKey, {
+      apiVersion: '2022-11-15',
+    });
+
+    // 👤 Create customer
     const customer = await stripe.customers.create({
       name: `${firstName} ${lastName}`,
       email,
       phone
     });
 
+    // 💵 Calculate total amount
     const amount = withBump ? basePrice + bumpPrice : basePrice;
 
-    const line_items = [
-      {
-        price_data: {
-          currency: 'usd',
-          product_data: {
-            name: baseLabel
-          },
-          unit_amount: basePrice
-        },
-        quantity: 1
-      }
-    ];
-
-    if (withBump) {
-      line_items.push({
-        price_data: {
-          currency: 'usd',
-          product_data: {
-            name: bumpLabel
-          },
-          unit_amount: bumpPrice
-        },
-        quantity: 1
-      });
-    }
-
+    // 🧾 Create payment intent
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
       currency: 'usd',
@@ -83,11 +68,12 @@ export default async function handler(req, res) {
       metadata: {
         withBump: withBump.toString(),
         basePrice: basePrice.toString(),
-        bumpPrice: bumpPrice.toString(),
+        bumpPrice: withBump ? bumpPrice.toString() : '0',
         baseLabel,
-        bumpLabel,
+        bumpLabel: withBump ? bumpLabel : '',
         email,
-        name: `${firstName} ${lastName}`,
+        firstname: firstName,
+        lastname: lastName,
         basePriceId,
         bumpPriceId: withBump ? bumpPriceId : '',
         baseProductId,
