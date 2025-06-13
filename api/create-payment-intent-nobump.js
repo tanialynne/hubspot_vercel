@@ -1,6 +1,7 @@
 import Stripe from 'stripe';
 
-export default async function handler(req, res) {    
+export default async function handler(req, res) {
+  // CORS + Preflight
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -22,58 +23,60 @@ export default async function handler(req, res) {
       lastName,
       email,
       phone,
+      withBump = false,
       basePrice = 2700,
+      bumpPrice = 4900,
       successUrl = "https://yourdomain.com/success",
       cancelUrl = "https://yourdomain.com/cancel",
-      baseLabel = "Main Product",     
+      baseLabel = "Main Product",
+      bumpLabel = "Order Bump Product",
       basePriceId,
-      baseProductId, 
-      mode = "stage"
+      bumpPriceId,
+      baseProductId,
+      bumpProductId,
+      mode = "stage" // 'stage' or 'live'
     } = req.body;
 
     console.log("📩 Incoming data:", req.body);
 
+    // 🔁 Choose correct Stripe secret key
     const stripeSecretKey =
-    mode === 'live'
-      ? process.env.STRIPE_LIVE_SECRET_KEY
-      : process.env.STRIPE_STAGE_SECRET_KEY;
+      mode === 'live'
+        ? process.env.STRIPE_LIVE_SECRET_KEY
+        : process.env.STRIPE_STAGE_SECRET_KEY;
 
     const stripe = new Stripe(stripeSecretKey, {
       apiVersion: '2022-11-15',
-    });  
+    });
 
+    // 👤 Create customer
     const customer = await stripe.customers.create({
       name: `${firstName} ${lastName}`,
       email,
       phone
     });
 
-    const line_items = [
-      {
-        price_data: {
-          currency: 'usd',
-          product_data: {
-            name: baseLabel
-          },
-          unit_amount: basePrice
-        },
-        quantity: 1
-      }
-    ];
+    // 💵 Calculate total amount
+    const amount = withBump ? basePrice + bumpPrice : basePrice;
 
+    // 🧾 Create payment intent
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: basePrice,
+      amount,
       currency: 'usd',
       customer: customer.id,
-      description: baseLabel,
+      description: withBump ? `${baseLabel} + ${bumpLabel}` : baseLabel,
       metadata: {
+        withBump: withBump.toString(),
         basePrice: basePrice.toString(),
+        bumpPrice: withBump ? bumpPrice.toString() : '0',
         baseLabel,
+        bumpLabel: withBump ? bumpLabel : '',
         email,
-        firstname: firstName,
-        lastname: lastName,
+        name: `${firstName} ${lastName}`,
         basePriceId,
-        baseProductId
+        bumpPriceId: withBump ? bumpPriceId : '',
+        baseProductId,
+        bumpProductId: withBump ? bumpProductId : ''
       }
     });
 
