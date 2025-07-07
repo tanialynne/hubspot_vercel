@@ -7,7 +7,7 @@ export default async function handler(req, res) {
   if (allowedOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   } else {
-    res.setHeader('Access-Control-Allow-Origin', 'https://www.heroic.us');
+    res.setHeader('Access-Control-Allow-Origin', '*');
   }
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -111,7 +111,10 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ success: true, results });
   } catch (err) {
-    console.error('🔥 Server error:', err);
-    return res.status(500).json({ success: false, message: 'fetch failed', error: err.message });
-  }
+  console.error('🔥 Server error:', err);
+  res.setHeader('Access-Control-Allow-Origin', origin || 'https://www.heroic.us');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  return res.status(500).json({ success: false, message: 'fetch failed', error: err.message, stack: err.stack });
+}
 }
