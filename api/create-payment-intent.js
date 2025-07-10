@@ -103,22 +103,30 @@ export default async function handler(req, res) {
     });
 
     // Retrieve confirmed payment intent to get payment method ID
-    const confirmedPaymentIntent = await stripe.paymentIntents.retrieve(paymentIntent.id);
-    const paymentMethodId = confirmedPaymentIntent.payment_method;
-    
-    if (paymentMethodId) {
-      // Explicitly attach payment method to customer
-      await stripe.paymentMethods.attach(paymentMethodId, { customer: customer.id });
-      console.log(`✅ Attached payment method ${paymentMethodId} to customer ${customer.id}`);
-    
-      // Set as default payment method
-      await stripe.customers.update(customer.id, {
-        invoice_settings: { default_payment_method: paymentMethodId }
-      });
-      console.log(`✅ Set default payment method for customer ${customer.id}`);
-    } else {
-      console.warn(`⚠️ No payment method found on payment intent ${paymentIntent.id}`);
-    }
+const confirmedPaymentIntent = await stripe.paymentIntents.retrieve(paymentIntent.id);
+const paymentMethodId = confirmedPaymentIntent.payment_method;
+
+if (paymentMethodId) {
+  // Explicitly attach payment method to customer
+  await stripe.paymentMethods.attach(paymentMethodId, { customer: customer.id });
+  console.log(`✅ Attached payment method ${paymentMethodId} to customer ${customer.id}`);
+
+  // Set as default payment method
+  await stripe.customers.update(customer.id, {
+    invoice_settings: { default_payment_method: paymentMethodId }
+  });
+  console.log(`✅ Set default payment method for customer ${customer.id}`);
+
+  // Create a SetupIntent to confirm off-session usage
+  await stripe.setupIntents.create({
+    customer: customer.id,
+    payment_method: paymentMethodId,
+    usage: 'off_session'
+  });
+  console.log(`✅ SetupIntent created to confirm off-session usage for payment method ${paymentMethodId}`);
+} else {
+  console.warn(`⚠️ No payment method found on payment intent ${paymentIntent.id}`);
+}
 
 
     return res.status(200).json({
