@@ -65,6 +65,7 @@ export default async function handler(req, res) {
       currency: 'usd',
       customer: customer.id,
       setup_future_usage: 'off_session',
+      automatic_payment_methods: { enabled: true },
       description: withBump ? `${baseLabel} + ${bumpLabel}` : baseLabel,
       metadata: {
         withBump: withBump.toString(),
