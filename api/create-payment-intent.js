@@ -81,7 +81,10 @@ export default async function handler(req, res) {
       }
     });
 
-    return res.status(200).json({ clientSecret: paymentIntent.client_secret });
+    return res.status(200).json({
+      clientSecret: paymentIntent.client_secret,
+      customerId: customer.id
+    });
 
   } catch (err) {
     console.error('❌ Error in /create-payment-intent:', err);
