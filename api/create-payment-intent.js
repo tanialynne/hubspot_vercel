@@ -39,7 +39,7 @@ export default async function handler(req, res) {
 
     console.log("📩 Incoming data:", req.body);
 
-    // 🔁 Choose correct Stripe secret key
+    // Choose correct Stripe secret key
     const stripeSecretKey =
       mode === 'live'
         ? process.env.STRIPE_LIVE_SECRET_KEY
@@ -49,17 +49,36 @@ export default async function handler(req, res) {
       apiVersion: '2022-11-15',
     });
 
-    // 👤 Create customer
-    const customer = await stripe.customers.create({
+    // Create customer
+    /*const customer = await stripe.customers.create({
       name: `${firstName} ${lastName}`,
       email,
       phone
+    });*/
+    // Check if customer already exists by email
+    const existingCustomers = await stripe.customers.list({
+      email,
+      limit: 1
     });
 
-    // 💵 Calculate total amount
+    let customer;
+    if (existingCustomers.data.length > 0) {
+      customer = existingCustomers.data[0];
+      console.log(`✅ Found existing customer: ${customer.id}`);
+    } else {
+      // Create new customer if not found
+      customer = await stripe.customers.create({
+        name: `${firstName} ${lastName}`,
+        email,
+        phone
+      });
+      console.log(`✅ Created new customer: ${customer.id}`);
+    }
+
+    // Calculate total amount
     const amount = withBump ? basePrice + bumpPrice : basePrice;
 
-    // 🧾 Create payment intent
+    // Create payment intent
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
       currency: 'usd',
@@ -82,6 +101,22 @@ export default async function handler(req, res) {
         bumpProductId: withBump ? bumpProductId : ''
       }
     });
+
+    //Retrieve payment method used
+    const confirmedPaymentIntent = await stripe.paymentIntents.retrieve(paymentIntent.id);
+    const paymentMethodId = confirmedPaymentIntent.payment_method;
+
+    if (paymentMethodId) {
+      // Attach payment method as default for the customer for one-click upsells
+      await stripe.customers.update(customer.id, {
+        invoice_settings: {
+          default_payment_method: paymentMethodId
+        }
+      });
+      console.log(`✅ Set default payment method for customer ${customer.id}`);
+    } else {
+      console.warn(`⚠️ No payment method found on payment intent ${paymentIntent.id}`);
+    }
 
     return res.status(200).json({
       clientSecret: paymentIntent.client_secret,
