@@ -71,7 +71,8 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
-      paymentIntentId: paymentIntent.id
+      paymentIntentId: paymentIntent.id,
+      email: customer.email
     });
   } catch (error) {
     console.error("❌ Stripe upsell error:", error);
