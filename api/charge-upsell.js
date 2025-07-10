@@ -45,7 +45,7 @@ export default async function handler(req, res) {
     }
 
     const lastPaymentIntent = paymentIntents.data[0];
-    const paymentMethodId = lastPaymentIntent.payment_method;
+    const paymentMethodId = lastPaymentIntent.payment_method;   
 
     if (!paymentMethodId) {
       return res.status(400).json({
@@ -53,6 +53,8 @@ export default async function handler(req, res) {
         message: "No payment method found from the last payment intent."
       });
     }
+
+    const customer = await stripe.customers.retrieve(customerId);
 
     // Create upsell payment intent using the last payment method
     const paymentIntent = await stripe.paymentIntents.create({
