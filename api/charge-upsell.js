@@ -1,5 +1,3 @@
-// pages/api/charge-upsell.ts
-
 import Stripe from 'stripe';
 
 export default async function handler(req, res) {
@@ -26,25 +24,40 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, message: "Missing required parameters" });
     }
 
-    const stripeSecretKey = mode === 'live'
-      ? process.env.STRIPE_LIVE_SECRET_KEY
-      : process.env.STRIPE_STAGE_SECRET_KEY;
+    const stripeSecretKey =
+      mode === 'live'
+        ? process.env.STRIPE_LIVE_SECRET_KEY
+        : process.env.STRIPE_STAGE_SECRET_KEY;
 
     const stripe = new Stripe(stripeSecretKey, { apiVersion: '2022-11-15' });
 
-    const customer = await stripe.customers.retrieve(customerId);
-    const defaultPaymentMethod = customer.invoice_settings.default_payment_method;
+    // Retrieve the latest payment intent for the customer to get payment method
+    const paymentIntents = await stripe.paymentIntents.list({
+      customer: customerId,
+      limit: 1
+    });
 
-    if (!defaultPaymentMethod) {
+    if (!paymentIntents.data.length) {
       return res.status(400).json({
         success: false,
-        message: "No default payment method on file for customer."
+        message: "No previous payment intent found for customer to get payment method."
       });
     }
 
+    const lastPaymentIntent = paymentIntents.data[0];
+    const paymentMethodId = lastPaymentIntent.payment_method;
+
+    if (!paymentMethodId) {
+      return res.status(400).json({
+        success: false,
+        message: "No payment method found from the last payment intent."
+      });
+    }
+
+    // Create upsell payment intent using the last payment method
     const paymentIntent = await stripe.paymentIntents.create({
       customer: customerId,
-      payment_method: defaultPaymentMethod,
+      payment_method: paymentMethodId,
       amount: upsellAmount, // in cents
       currency: "usd",
       off_session: true,
