@@ -64,6 +64,7 @@ export default async function handler(req, res) {
       amount,
       currency: 'usd',
       customer: customer.id,
+      setup_future_usage: 'off_session',
       description: withBump ? `${baseLabel} + ${bumpLabel}` : baseLabel,
       metadata: {
         withBump: withBump.toString(),
