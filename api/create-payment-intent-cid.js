@@ -122,9 +122,8 @@ export default async function handler(req, res) {
       clientSecret: paymentIntent.client_secret,
       customerId: customer.id
     });
-
   } catch (err) {
-    console.error('❌ Error in /create-payment-intent-cid:', err);
+    console.error('❌ Error in /create-payment-intent:', err);
     return res.status(500).json({
       error: 'Internal Server Error',
       details: err.message
