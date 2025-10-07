@@ -1,169 +1,201 @@
 import Stripe from 'stripe';
 
 export default async function handler(req, res) {
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    return res.status(200).end();
+  }
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const sig = req.headers['stripe-signature'];
-
-  // You'll need to set this environment variable with your webhook signing secret
-  const webhookSecret = process.env.STRIPE_CHECKOUT_WEBHOOK_SECRET;
-
-  let event;
-
   try {
-    // Verify webhook signature
-    const stripeSecretKey = req.body.livemode
-      ? process.env.STRIPE_LIVE_SECRET_KEY
-      : process.env.STRIPE_STAGE_SECRET_KEY;
+    const {
+      customerId,
+      setupIntentId,
+      priceId,
+      productLabel,
+      productType,
+      period,
+      hubspotFormGuid,
+      acTags,
+      userId,
+      firstName,
+      lastName,
+      email,
+      mode = 'stage'
+    } = req.body;
+
+    console.log(`📩 Creating subscription for customer: ${customerId} (mode: ${mode})`);
+
+    // Validate required fields
+    if (!customerId || !setupIntentId || !priceId) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Choose correct Stripe secret key
+    const stripeSecretKey =
+      mode === 'live'
+        ? process.env.STRIPE_LIVE_SECRET_KEY
+        : process.env.STRIPE_STAGE_SECRET_KEY;
 
     const stripe = new Stripe(stripeSecretKey, {
       apiVersion: '2022-11-15',
     });
 
-    // Get raw body for signature verification
-    const rawBody = JSON.stringify(req.body);
-    event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
-  } catch (err) {
-    console.error('⚠️ Webhook signature verification failed:', err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
-  }
+    // Get the Setup Intent to retrieve the payment method
+    const setupIntent = await stripe.setupIntents.retrieve(setupIntentId);
 
-  // Handle the checkout.session.completed event
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-
-    console.log('============================================');
-    console.log('📥 WEBHOOK RECEIVED: checkout.session.completed');
-    console.log('Session ID:', session.id);
-    console.log('Customer Email:', session.customer_details?.email);
-    console.log('Amount Total:', session.amount_total / 100);
-    console.log('Payment Status:', session.payment_status);
-    console.log('============================================');
-
-    try {
-      // Extract metadata
-      const metadata = session.metadata;
-      console.log('📦 Metadata:', metadata);
-
-      const {
-        email,
-        firstName,
-        lastName,
-        phone,
-        userId,
-        productLabel,
-        productType,
-        period,
-        hubspotFormGuid,
-        acTags,
-        source
-      } = metadata;
-
-      // Only process if this is from the Heroic Pricing Module
-      if (source !== 'Heroic Pricing Module') {
-        console.log('⚠️ SKIPPED - Not from Heroic Pricing Module (source:', source, ')');
-        return res.json({ received: true, skipped: true, reason: 'not_heroic_module' });
-      }
-
-      const customerEmail = session.customer_details?.email || email;
-      const customerPhone = session.customer_details?.phone || '';
-
-      console.log('👤 Processing for customer:', customerEmail);
-
-      const results = {
-        sessionId: session.id,
-        customerEmail,
-        hubspotSubmitted: false,
-        acTagsApplied: false,
-        errors: []
-      };
-
-      // Submit to HubSpot if form GUID provided
-      if (hubspotFormGuid && customerEmail) {
-        console.log('📧 Submitting to HubSpot form:', hubspotFormGuid);
-        try {
-          await submitHubspotForm({
-            firstName,
-            lastName,
-            email: customerEmail,
-            phone: customerPhone || phone,
-            userId,
-            productLabel,
-            productType,
-            period
-          }, session, hubspotFormGuid);
-
-          console.log('✅ HubSpot form submitted successfully');
-          results.hubspotSubmitted = true;
-        } catch (err) {
-          console.error('❌ HubSpot submission failed:', err.message);
-          results.errors.push(`HubSpot: ${err.message}`);
-        }
-      } else {
-        console.log('⚠️ Skipping HubSpot - missing form GUID or email');
-      }
-
-      // Apply ActiveCampaign tags if configured
-      if (acTags && customerEmail) {
-        const tags = acTags.split(',').map(t => t.trim()).filter(t => t);
-        if (tags.length > 0) {
-          console.log('🏷️ Applying AC tags:', tags);
-          try {
-            const acResponse = await fetch('https://hubspot-vercel-chi.vercel.app/api/tag-with-text', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                email: customerEmail,
-                tags: tags
-              })
-            });
-
-            if (acResponse.ok) {
-              console.log('✅ ActiveCampaign tags applied successfully');
-              results.acTagsApplied = true;
-            } else {
-              const errorText = await acResponse.text();
-              console.error('❌ AC tagging failed:', errorText);
-              results.errors.push(`AC: ${errorText}`);
-            }
-          } catch (err) {
-            console.error('❌ AC tagging error:', err.message);
-            results.errors.push(`AC: ${err.message}`);
-          }
-        }
-      } else {
-        console.log('⚠️ Skipping AC tags - no tags configured or missing email');
-      }
-
-      console.log('============================================');
-      console.log('✅ WEBHOOK PROCESSING COMPLETE');
-      console.log('Results:', results);
-      console.log('============================================');
-
-      // Return detailed results (Stripe ignores this, but useful for manual testing)
-      return res.json({ received: true, results });
-
-    } catch (error) {
-      console.error('============================================');
-      console.error('❌ CRITICAL ERROR processing webhook:', error);
-      console.error('Stack:', error.stack);
-      console.error('============================================');
-      // Don't return error to Stripe - we've received the webhook
-      return res.json({ received: true, error: error.message });
+    if (!setupIntent.payment_method) {
+      return res.status(400).json({ error: 'No payment method found on Setup Intent' });
     }
+
+    console.log('✅ Retrieved Setup Intent:', setupIntent.id);
+    console.log('✅ Payment Method:', setupIntent.payment_method);
+
+    let paymentResult;
+    let isOneTime = period === 'onetime';
+
+    if (isOneTime) {
+      // For one-time purchases, get the price to determine amount
+      const price = await stripe.prices.retrieve(priceId);
+
+      // Create a Payment Intent for one-time payment
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: price.unit_amount,
+        currency: price.currency,
+        customer: customerId,
+        payment_method: setupIntent.payment_method,
+        confirm: true,
+        off_session: true,
+        description: productLabel,
+        metadata: {
+          productLabel: productLabel || "",
+          productType: productType || "",
+          period: "onetime",
+          hubspotFormGuid: hubspotFormGuid || "",
+          acTags: acTags || "",
+          userId: userId || "",
+          firstName: firstName || "",
+          lastName: lastName || "",
+          email: email || "",
+          source: "Heroic Pricing Module",
+        },
+      });
+
+      console.log('✅ Payment Intent created:', paymentIntent.id);
+      paymentResult = {
+        id: paymentIntent.id,
+        status: paymentIntent.status,
+        customer: customerId,
+        items: { data: [{ price: { unit_amount: price.unit_amount } }] }
+      };
+    } else {
+      // Create the subscription for recurring payments
+      const subscription = await stripe.subscriptions.create({
+        customer: customerId,
+        items: [{
+          price: priceId,
+        }],
+        default_payment_method: setupIntent.payment_method,
+        metadata: {
+          productLabel: productLabel || '',
+          productType: productType || '',
+          period: period || '',
+          hubspotFormGuid: hubspotFormGuid || '',
+          acTags: acTags || '',
+          userId: userId || '',
+          firstName: firstName || '',
+          lastName: lastName || '',
+          email: email || '',
+          source: 'Heroic Pricing Module'
+        }
+      });
+
+      console.log('✅ Subscription created:', subscription.id);
+      paymentResult = subscription;
+    }
+
+    // Submit to HubSpot
+    if (hubspotFormGuid && email) {
+      try {
+        await submitHubspotForm({
+          firstName,
+          lastName,
+          email,
+          userId,
+          productLabel,
+          productType,
+          period,
+          hubspotFormGuid
+        }, paymentResult, isOneTime);
+
+        console.log('✅ HubSpot form submitted');
+      } catch (err) {
+        console.error('❌ HubSpot submission failed:', err.message);
+        // Don't fail the request if HubSpot fails
+      }
+    }
+
+    // Apply ActiveCampaign tags
+    console.log('🏷️ AC Tags check - acTags:', acTags, 'email:', email);
+
+    if (acTags && email) {
+      try {
+        const tags = acTags.split(',').map(t => t.trim()).filter(t => t);
+        console.log('🏷️ Parsed tags:', tags);
+
+        if (tags.length > 0) {
+          const acResponse = await fetch('https://hubspot-vercel-chi.vercel.app/api/tag-with-text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, tags })
+          });
+
+          const acResult = await acResponse.json();
+
+          if (!acResponse.ok) {
+            console.error('❌ AC tagging failed:', acResponse.status, acResult);
+          } else {
+            console.log('✅ AC tags applied:', tags, acResult);
+          }
+        } else {
+          console.log('⚠️ No tags after parsing');
+        }
+      } catch (err) {
+        console.error('❌ AC tagging failed:', err.message);
+        // Don't fail the request if AC fails
+      }
+    } else {
+      console.log('⚠️ Skipping AC tags - acTags:', acTags, 'email:', email);
+    }
+
+    return res.status(200).json({
+      subscriptionId: paymentResult.id,
+      customerId: customerId,
+      status: paymentResult.status,
+      type: isOneTime ? 'payment' : 'subscription'
+    });
+
+  } catch (err) {
+    console.error('❌ Error creating subscription:', err);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      details: err.message
+    });
   }
-
-  console.log('ℹ️ Webhook event type not handled:', event.type);
-
-  // Return a response to acknowledge receipt of the event
-  res.json({ received: true });
 }
 
 // Submit HubSpot form
-async function submitHubspotForm(customerData, session, hubspotFormGuid) {
-  const totalAmount = session.amount_total / 100;
+async function submitHubspotForm(customerData, paymentResult, isOneTime) {
+  const totalAmount = paymentResult.items.data[0].price.unit_amount / 100;
   const productName = customerData.productLabel;
 
   const formData = {
@@ -171,17 +203,17 @@ async function submitHubspotForm(customerData, session, hubspotFormGuid) {
       { name: '0-1/firstname', value: customerData.firstName },
       { name: '0-1/lastname', value: customerData.lastName },
       { name: '0-1/email', value: customerData.email },
-      { name: '0-1/phone', value: customerData.phone || '' },
+      { name: '0-1/phone', value: '' },
       { name: '0-1/website', value: 'https://heroic.us' },
       { name: '0-1/purchase_amount', value: totalAmount.toFixed(2) },
       { name: '0-1/product_name', value: productName },
-      { name: '0-1/checkout_session_id', value: session.id },
+      { name: '0-1/subscription_id', value: paymentResult.id },
       {
         name: '0-1/purchase_details',
         value: JSON.stringify({
-          checkoutSessionId: session.id,
-          customerId: session.customer,
-          subscriptionId: session.subscription || '',
+          id: paymentResult.id,
+          type: isOneTime ? 'payment' : 'subscription',
+          customerId: paymentResult.customer,
           userId: customerData.userId || '',
           totalAmount: totalAmount.toFixed(2),
           productName,
@@ -193,7 +225,7 @@ async function submitHubspotForm(customerData, session, hubspotFormGuid) {
     ]
   };
 
-  const url = `https://api.hsforms.com/submissions/v3/integration/submit/45764384/${hubspotFormGuid}`;
+  const url = `https://api.hsforms.com/submissions/v3/integration/submit/45764384/${customerData.hubspotFormGuid}`;
 
   const response = await fetch(url, {
     method: 'POST',
