@@ -29,6 +29,7 @@ export default async function handler(req, res) {
       successUrl,
       hubspotFormGuid,
       acTags,
+      userId, // Heroic user ID
       mode = "stage" // 'stage' or 'live'
     } = req.body;
 
@@ -80,10 +81,23 @@ export default async function handler(req, res) {
       customer = await stripe.customers.create({
         name: `${firstName} ${lastName}`,
         email,
-        phone
+        phone,
+        metadata: {
+          heroic_user_id: userId || ''
+        }
       });
 
       console.log('✅ Created new customer:', customer.id);
+    }
+
+    // Update customer with Heroic user ID if provided
+    if (userId && !customer.metadata?.heroic_user_id) {
+      customer = await stripe.customers.update(customer.id, {
+        metadata: {
+          heroic_user_id: userId
+        }
+      });
+      console.log('✅ Updated customer with Heroic user ID:', userId);
     }
 
     // Build success URL with query parameters
@@ -99,6 +113,7 @@ export default async function handler(req, res) {
       const sessionParams = {
         ui_mode: 'embedded',
         customer: customer.id,
+        customer_email: email, // Prefill email
         line_items: [
           {
             price: priceId,
@@ -125,8 +140,11 @@ export default async function handler(req, res) {
           lastName,
           email,
           phone: phone || '',
+          userId: userId || '',
           source: 'Heroic Pricing Module'
-        }
+        },
+        // Pre-fill customer info
+        billing_address_collection: 'auto'
       };
 
       session = await stripe.checkout.sessions.create(sessionParams);
@@ -165,6 +183,7 @@ export default async function handler(req, res) {
             lastName,
             email,
             phone: phone || '',
+            userId: userId || '',
             source: 'Heroic Pricing Module'
           }
         };
