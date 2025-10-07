@@ -36,9 +36,13 @@ export default async function handler(req, res) {
     console.log(`📩 Creating Setup Intent for: ${email} (mode: ${mode})`);
 
     // Validate required fields
-    if (!firstName || !lastName || !email || !userId) {
+    if (!email || !userId) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+
+    // Use defaults if name not provided (for sign-in users)
+    const customerFirstName = firstName || 'Heroic';
+    const customerLastName = lastName || 'User';
 
     // Choose correct Stripe secret key
     const stripeSecretKey =
@@ -60,10 +64,10 @@ export default async function handler(req, res) {
     if (existingCustomers.data.length === 1) {
       customer = existingCustomers.data[0];
 
-      // Update customer with Heroic user ID if not set
-      if (!customer.metadata?.heroic_user_id) {
+      // Update customer with Heroic user ID and name if not set
+      if (!customer.metadata?.heroic_user_id || !customer.name) {
         customer = await stripe.customers.update(customer.id, {
-          name: `${firstName} ${lastName}`,
+          name: customer.name || `${customerFirstName} ${customerLastName}`,
           metadata: {
             heroic_user_id: userId
           }
@@ -80,7 +84,7 @@ export default async function handler(req, res) {
     } else {
       // Create new customer
       customer = await stripe.customers.create({
-        name: `${firstName} ${lastName}`,
+        name: `${customerFirstName} ${customerLastName}`,
         email,
         metadata: {
           heroic_user_id: userId
@@ -99,8 +103,8 @@ export default async function handler(req, res) {
       metadata: {
         userId,
         email,
-        firstName,
-        lastName,
+        firstName: customerFirstName,
+        lastName: customerLastName,
         source: 'Heroic Pricing Module'
       }
     });
