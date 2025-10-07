@@ -1,11 +1,15 @@
 /**
- * Create Heroic Account API Endpoint
+ * Heroic Account Authentication API Endpoint
  *
- * This endpoint creates a new Heroic user account via GraphQL.
+ * This endpoint handles both sign-up and sign-in via GraphQL.
  *
  * MODE CONFIGURATION:
- * - mode: "stage" -> Creates account in DEV (api.dev.heroic.us)
- * - mode: "live"  -> Creates account in PRODUCTION (api.heroic.us)
+ * - mode: "stage" -> Uses DEV (api.dev.heroic.us)
+ * - mode: "live"  -> Uses PRODUCTION (api.heroic.us)
+ *
+ * ACTION:
+ * - action: "signup" -> Creates new account (requires firstName)
+ * - action: "signin" -> Signs in existing account (firstName optional)
  *
  * The mode is passed from the frontend based on module.stripe_mode setting.
  */
@@ -27,22 +31,29 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { email, password, firstName, mode = "stage" } = req.body;
+    const { email, password, firstName, action = "signup", mode = "stage" } = req.body;
 
-    console.log(`📩 Creating Heroic account for: ${email} (mode: ${mode})`);
+    const isSignIn = action === "signin";
+    console.log(`📩 ${isSignIn ? 'Signing in' : 'Creating account'} for: ${email} (mode: ${mode})`);
 
     // Validate required fields
-    if (!email || !password || !firstName) {
+    if (!email || !password) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Validate password requirements
-    if (password.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    if (!isSignIn && !firstName) {
+      return res.status(400).json({ error: 'First name is required for sign up' });
     }
 
-    if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?1234567890]/.test(password)) {
-      return res.status(400).json({ error: 'Password must contain at least 1 symbol or number' });
+    // Validate password requirements for signup
+    if (!isSignIn) {
+      if (password.length < 8) {
+        return res.status(400).json({ error: 'Password must be at least 8 characters' });
+      }
+
+      if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?1234567890]/.test(password)) {
+        return res.status(400).json({ error: 'Password must contain at least 1 symbol or number' });
+      }
     }
 
     // Choose correct API URL
@@ -50,15 +61,36 @@ export default async function handler(req, res) {
       ? 'https://api.heroic.us/graphql'
       : 'https://api.dev.heroic.us/graphql';
 
-    // Create account via GraphQL mutation
-    const signUpMutation = `
-      mutation SignUp($email: String!, $password: String!, $firstName: String!) {
-        signUp(input: { email: $email, password: $password, firstName: $firstName, startFree30DayPremiumTrial: false }) {
-          userId
-          token
+    let mutation, variables;
+
+    if (isSignIn) {
+      // Sign In mutation
+      mutation = `
+        mutation SignIn($email: String!, $password: String!) {
+          signIn(input: { email: $email, password: $password }) {
+            userId
+            token
+            user {
+              firstName
+              lastName
+              email
+            }
+          }
         }
-      }
-    `;
+      `;
+      variables = { email, password };
+    } else {
+      // Sign Up mutation
+      mutation = `
+        mutation SignUp($email: String!, $password: String!, $firstName: String!) {
+          signUp(input: { email: $email, password: $password, firstName: $firstName, startFree30DayPremiumTrial: false }) {
+            userId
+            token
+          }
+        }
+      `;
+      variables = { email, password, firstName };
+    }
 
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -66,12 +98,8 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        query: signUpMutation,
-        variables: {
-          email,
-          password,
-          firstName
-        }
+        query: mutation,
+        variables
       })
     });
 
@@ -83,9 +111,16 @@ export default async function handler(req, res) {
       console.error('❌ GraphQL errors:', result.errors);
 
       // Check for common errors
-      const errorMessage = result.errors[0]?.message || 'Failed to create account';
+      const errorMessage = result.errors[0]?.message || `Failed to ${isSignIn ? 'sign in' : 'create account'}`;
 
-      if (errorMessage.includes('already') || errorMessage.includes('exists')) {
+      if (isSignIn && (errorMessage.includes('Invalid') || errorMessage.includes('not found'))) {
+        return res.status(401).json({
+          error: 'Invalid email or password',
+          details: errorMessage
+        });
+      }
+
+      if (!isSignIn && (errorMessage.includes('already') || errorMessage.includes('exists'))) {
         return res.status(409).json({
           error: 'Account already exists with this email',
           details: errorMessage
@@ -93,20 +128,25 @@ export default async function handler(req, res) {
       }
 
       return res.status(400).json({
-        error: 'Failed to create account',
+        error: `Failed to ${isSignIn ? 'sign in' : 'create account'}`,
         details: errorMessage
       });
     }
 
-    if (!result.data?.signUp?.userId) {
-      return res.status(500).json({ error: 'Failed to create account - no user ID returned' });
+    const responseData = isSignIn ? result.data?.signIn : result.data?.signUp;
+
+    if (!responseData?.userId) {
+      return res.status(500).json({ error: `Failed to ${isSignIn ? 'sign in' : 'create account'} - no user ID returned` });
     }
 
-    console.log('✅ Heroic account created:', result.data.signUp.userId);
+    console.log(`✅ ${isSignIn ? 'Signed in' : 'Account created'}:`, responseData.userId);
 
     return res.status(200).json({
-      userId: result.data.signUp.userId,
-      token: result.data.signUp.token,
+      userId: responseData.userId,
+      token: responseData.token,
+      firstName: responseData.user?.firstName || firstName || '',
+      lastName: responseData.user?.lastName || '',
+      email: responseData.user?.email || email,
       success: true
     });
 
