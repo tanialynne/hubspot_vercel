@@ -1,5 +1,6 @@
 /**
  * Heroic Account Authentication API Endpoint
+ *
  * This endpoint handles both sign-up and sign-in via GraphQL.
  *
  * MODE CONFIGURATION:
@@ -69,11 +70,6 @@ export default async function handler(req, res) {
           signIn(input: { email: $email, password: $password }) {
             userId
             token
-            user {
-              firstName
-              lastName
-              email
-            }
           }
         }
       `;
@@ -140,12 +136,51 @@ export default async function handler(req, res) {
 
     console.log(`✅ ${isSignIn ? 'Signed in' : 'Account created'}:`, responseData.userId);
 
+    // For sign-in, fetch user profile data
+    let userFirstName = firstName || '';
+    let userLastName = '';
+
+    if (isSignIn && responseData.token) {
+      try {
+        const profileQuery = `
+          query GetUser {
+            user {
+              firstName
+              lastName
+              email
+            }
+          }
+        `;
+
+        const profileResponse = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${responseData.token}`
+          },
+          body: JSON.stringify({
+            query: profileQuery
+          })
+        });
+
+        const profileResult = await profileResponse.json();
+
+        if (profileResult.data?.user) {
+          userFirstName = profileResult.data.user.firstName || '';
+          userLastName = profileResult.data.user.lastName || '';
+        }
+      } catch (err) {
+        console.error('⚠️ Failed to fetch user profile:', err);
+        // Don't fail the request, just use empty name
+      }
+    }
+
     return res.status(200).json({
       userId: responseData.userId,
       token: responseData.token,
-      firstName: responseData.user?.firstName || firstName || '',
-      lastName: responseData.user?.lastName || '',
-      email: responseData.user?.email || email,
+      firstName: userFirstName,
+      lastName: userLastName,
+      email: email,
       success: true
     });
 
