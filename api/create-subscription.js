@@ -64,15 +64,15 @@ export default async function handler(req, res) {
     let isOneTime = period === 'onetime';
 
     if (isOneTime) {
-      // For one-time purchases, create a subscription with items=[] and add_invoice_items
-      // This creates a subscription with a one-time charge that triggers entitlements
+      // For one-time purchases, create a subscription and cancel it immediately
+      // This charges once but still creates a subscription record for entitlements
       const subscription = await stripe.subscriptions.create({
         customer: customerId,
-        items: [],
-        add_invoice_items: [{
+        items: [{
           price: priceId,
         }],
         default_payment_method: setupIntent.payment_method,
+        cancel_at_period_end: false,
         metadata: {
           productLabel: productLabel || '',
           productType: productType || '',
@@ -87,7 +87,10 @@ export default async function handler(req, res) {
         }
       });
 
-      console.log('✅ One-time subscription created:', subscription.id);
+      // Cancel the subscription immediately after first payment
+      await stripe.subscriptions.cancel(subscription.id);
+
+      console.log('✅ One-time subscription created and canceled:', subscription.id);
       paymentResult = subscription;
     } else {
       // Create the subscription for recurring payments
