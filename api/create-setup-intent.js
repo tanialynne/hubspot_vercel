@@ -64,6 +64,21 @@ export default async function handler(req, res) {
     if (existingCustomers.data.length === 1) {
       customer = existingCustomers.data[0];
 
+      // Check for active subscriptions
+      const subscriptions = await stripe.subscriptions.list({
+        customer: customer.id,
+        status: 'active',
+        limit: 10
+      });
+
+      if (subscriptions.data.length > 0) {
+        console.log('⚠️ Customer already has active subscription(s)');
+        return res.status(409).json({
+          error: 'You already have an active subscription',
+          hasActiveSubscription: true
+        });
+      }
+
       // Update customer with Heroic user ID and name if not set
       if (!customer.metadata?.heroic_user_id || !customer.name) {
         customer = await stripe.customers.update(customer.id, {
@@ -80,6 +95,22 @@ export default async function handler(req, res) {
       if (!customer) {
         customer = existingCustomers.data[0];
       }
+
+      // Check for active subscriptions
+      const subscriptions = await stripe.subscriptions.list({
+        customer: customer.id,
+        status: 'active',
+        limit: 10
+      });
+
+      if (subscriptions.data.length > 0) {
+        console.log('⚠️ Customer already has active subscription(s)');
+        return res.status(409).json({
+          error: 'You already have an active subscription',
+          hasActiveSubscription: true
+        });
+      }
+
       console.log('✅ Found multiple customers, using:', customer.id);
     } else {
       // Create new customer
