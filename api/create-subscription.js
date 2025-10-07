@@ -64,15 +64,18 @@ export default async function handler(req, res) {
     let isOneTime = period === 'onetime';
 
     if (isOneTime) {
-      // For one-time purchases, create a subscription and cancel it immediately
-      // This charges once but still creates a subscription record for entitlements
-      const subscription = await stripe.subscriptions.create({
+      // For one-time purchases, get the price to determine amount
+      const price = await stripe.prices.retrieve(priceId);
+
+      // Create a Payment Intent for one-time payment
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: price.unit_amount,
+        currency: price.currency,
         customer: customerId,
-        items: [{
-          price: priceId,
-        }],
-        default_payment_method: setupIntent.payment_method,
-        cancel_at_period_end: false,
+        payment_method: setupIntent.payment_method,
+        confirm: true,
+        off_session: true,
+        description: `${productLabel} - One-time purchase`,
         metadata: {
           productLabel: productLabel || '',
           productType: productType || '',
@@ -87,11 +90,13 @@ export default async function handler(req, res) {
         }
       });
 
-      // Cancel the subscription immediately after first payment
-      await stripe.subscriptions.cancel(subscription.id);
-
-      console.log('✅ One-time subscription created and canceled:', subscription.id);
-      paymentResult = subscription;
+      console.log('✅ Payment Intent created:', paymentIntent.id);
+      paymentResult = {
+        id: paymentIntent.id,
+        status: paymentIntent.status,
+        customer: customerId,
+        items: { data: [{ price: { unit_amount: price.unit_amount } }] }
+      };
     } else {
       // Create the subscription for recurring payments
       const subscription = await stripe.subscriptions.create({
