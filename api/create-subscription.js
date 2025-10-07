@@ -64,17 +64,14 @@ export default async function handler(req, res) {
     let isOneTime = period === 'onetime';
 
     if (isOneTime) {
-      // For one-time purchases, get the price to determine amount
-      const price = await stripe.prices.retrieve(priceId);
-
-      // Create a Payment Intent for one-time payment
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: price.unit_amount,
-        currency: price.currency,
+      // For one-time purchases, create a subscription with add_invoice_items
+      // This ensures entitlements are properly granted
+      const subscription = await stripe.subscriptions.create({
         customer: customerId,
-        payment_method: setupIntent.payment_method,
-        confirm: true,
-        off_session: true,
+        add_invoice_items: [{
+          price: priceId,
+        }],
+        default_payment_method: setupIntent.payment_method,
         metadata: {
           productLabel: productLabel || '',
           productType: productType || '',
@@ -89,12 +86,8 @@ export default async function handler(req, res) {
         }
       });
 
-      console.log('✅ Payment Intent created:', paymentIntent.id);
-      paymentResult = {
-        id: paymentIntent.id,
-        status: paymentIntent.status,
-        items: { data: [{ price: { unit_amount: price.unit_amount } }] }
-      };
+      console.log('✅ One-time subscription created:', subscription.id);
+      paymentResult = subscription;
     } else {
       // Create the subscription for recurring payments
       const subscription = await stripe.subscriptions.create({
