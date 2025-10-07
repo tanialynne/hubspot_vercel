@@ -1,3 +1,15 @@
+/**
+ * Create Heroic Account API Endpoint
+ *
+ * This endpoint creates a new Heroic user account via GraphQL.
+ *
+ * MODE CONFIGURATION:
+ * - mode: "stage" -> Creates account in DEV (api.dev.heroic.us)
+ * - mode: "live"  -> Creates account in PRODUCTION (api.heroic.us)
+ *
+ * The mode is passed from the frontend based on module.stripe_mode setting.
+ */
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -17,7 +29,7 @@ export default async function handler(req, res) {
   try {
     const { email, password, firstName, mode = "stage" } = req.body;
 
-    console.log("📩 Creating Heroic account for:", email);
+    console.log(`📩 Creating Heroic account for: ${email} (mode: ${mode})`);
 
     // Validate required fields
     if (!email || !password || !firstName) {
