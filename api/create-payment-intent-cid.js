@@ -118,13 +118,18 @@ export default async function handler(req, res) {
       ? [{ price: basePriceId, quantity: 1 }]
       : [{ price_data: { currency: "usd", product_data: { name: baseLabel }, unit_amount: basePrice }, quantity: 1 }];
 
+    // Create Checkout Session for Revenue Cat tracking
+    // Note: We create this but don't actually use it for payment collection
     const checkoutSession = await stripe.checkout.sessions.create({
-      ui_mode: "custom", // KEY: This allows custom form with no iframe!
       customer: customer.id,
       mode: sessionMode,
       line_items: lineItems,
-      return_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
-      metadata: sessionMetadata,
+      success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: successUrl,
+      metadata: {
+        ...sessionMetadata,
+        custom_form: 'true', // Flag to indicate this was created via custom form
+      },
       // Add subscription metadata for payment plans
       ...(period === "payment_plan" && installments && {
         subscription_data: {
@@ -137,16 +142,53 @@ export default async function handler(req, res) {
     });
 
     console.log("✅ Checkout session created:", checkoutSession.id);
-    console.log("✅ Client secret:", checkoutSession.client_secret);
 
-    // Return the session with client_secret for custom UI
-    return res.status(200).json({
-      clientSecret: checkoutSession.client_secret,
-      checkoutSessionId: checkoutSession.id,
-      customerId: customer.id,
-      isSubscription: isSubscription,
-      priceId: basePriceId,
-    });
+    // Now create SetupIntent or PaymentIntent for custom form payment collection
+    if (isSubscription) {
+      // For subscriptions, create a SetupIntent
+      const setupIntent = await stripe.setupIntents.create({
+        customer: customer.id,
+        payment_method_types: ['card'],
+        metadata: {
+          ...sessionMetadata,
+          checkout_session_id: checkoutSession.id,
+        },
+      });
+
+      console.log("✅ Setup intent created:", setupIntent.id);
+
+      return res.status(200).json({
+        clientSecret: setupIntent.client_secret,
+        setupIntentId: setupIntent.id,
+        checkoutSessionId: checkoutSession.id,
+        customerId: customer.id,
+        isSubscription: true,
+        priceId: basePriceId,
+      });
+    } else {
+      // For one-time payments, create PaymentIntent
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: basePrice,
+        currency: "usd",
+        customer: customer.id,
+        automatic_payment_methods: { enabled: true },
+        description: baseLabel,
+        metadata: {
+          ...sessionMetadata,
+          checkout_session_id: checkoutSession.id,
+        },
+      });
+
+      console.log("✅ Payment intent created:", paymentIntent.id);
+
+      return res.status(200).json({
+        clientSecret: paymentIntent.client_secret,
+        paymentIntentId: paymentIntent.id,
+        checkoutSessionId: checkoutSession.id,
+        customerId: customer.id,
+        isSubscription: false,
+      });
+    }
   } catch (err) {
     console.error("❌ Error in /create-payment-intent:", err);
     return res.status(500).json({
