@@ -31,6 +31,7 @@ export default async function handler(req, res) {
       email,
       userId,
       priceId,
+      productId,
       mode = "stage"
     } = req.body;
 
@@ -65,23 +66,23 @@ export default async function handler(req, res) {
     if (existingCustomers.data.length === 1) {
       customer = existingCustomers.data[0];
 
-      // Check if customer already has this specific subscription
-      if (priceId) {
+      // Check if customer already has this product (any variant/price)
+      if (productId) {
         const subscriptions = await stripe.subscriptions.list({
           customer: customer.id,
           status: 'active',
           limit: 100
         });
 
-        // Check if any active subscription has this price
-        const hasSamePlan = subscriptions.data.some(sub =>
-          sub.items.data.some(item => item.price.id === priceId)
+        // Check if any active subscription has this product
+        const hasSameProduct = subscriptions.data.some(sub =>
+          sub.items.data.some(item => item.price.product === productId)
         );
 
-        if (hasSamePlan) {
-          console.log('⚠️ Customer already has this subscription plan');
+        if (hasSameProduct) {
+          console.log('⚠️ Customer already has an active subscription to this product');
           return res.status(409).json({
-            error: 'You already have an active subscription to this plan',
+            error: 'You already have an active subscription to this product. Please manage your existing subscription in your account.',
             hasActiveSubscription: true
           });
         }
@@ -104,23 +105,23 @@ export default async function handler(req, res) {
         customer = existingCustomers.data[0];
       }
 
-      // Check if customer already has this specific subscription
-      if (priceId) {
+      // Check if customer already has this product (any variant/price)
+      if (productId) {
         const subscriptions = await stripe.subscriptions.list({
           customer: customer.id,
           status: 'active',
           limit: 100
         });
 
-        // Check if any active subscription has this price
-        const hasSamePlan = subscriptions.data.some(sub =>
-          sub.items.data.some(item => item.price.id === priceId)
+        // Check if any active subscription has this product
+        const hasSameProduct = subscriptions.data.some(sub =>
+          sub.items.data.some(item => item.price.product === productId)
         );
 
-        if (hasSamePlan) {
-          console.log('⚠️ Customer already has this subscription plan');
+        if (hasSameProduct) {
+          console.log('⚠️ Customer already has an active subscription to this product');
           return res.status(409).json({
-            error: 'You already have an active subscription to this plan',
+            error: 'You already have an active subscription to this product. Please manage your existing subscription in your account.',
             hasActiveSubscription: true
           });
         }
