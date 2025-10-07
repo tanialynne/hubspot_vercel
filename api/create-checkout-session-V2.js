@@ -113,7 +113,7 @@ export default async function handler(req, res) {
       const sessionParams = {
         ui_mode: 'embedded',
         customer: customer.id,
-        customer_email: email, // Prefill email
+        // Note: cannot use customer_email when customer is specified
         line_items: [
           {
             price: priceId,
