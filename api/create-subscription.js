@@ -75,7 +75,7 @@ export default async function handler(req, res) {
         payment_method: setupIntent.payment_method,
         confirm: true,
         off_session: true,
-        description: `${productLabel} - One-time purchase`,
+        description: productLabel,
         metadata: {
           productLabel: productLabel || '',
           productType: productType || '',
