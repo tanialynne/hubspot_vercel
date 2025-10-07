@@ -30,6 +30,7 @@ export default async function handler(req, res) {
       lastName,
       email,
       userId,
+      priceId,
       mode = "stage"
     } = req.body;
 
@@ -64,19 +65,26 @@ export default async function handler(req, res) {
     if (existingCustomers.data.length === 1) {
       customer = existingCustomers.data[0];
 
-      // Check for active subscriptions
-      const subscriptions = await stripe.subscriptions.list({
-        customer: customer.id,
-        status: 'active',
-        limit: 10
-      });
-
-      if (subscriptions.data.length > 0) {
-        console.log('⚠️ Customer already has active subscription(s)');
-        return res.status(409).json({
-          error: 'You already have an active subscription',
-          hasActiveSubscription: true
+      // Check if customer already has this specific subscription
+      if (priceId) {
+        const subscriptions = await stripe.subscriptions.list({
+          customer: customer.id,
+          status: 'active',
+          limit: 100
         });
+
+        // Check if any active subscription has this price
+        const hasSamePlan = subscriptions.data.some(sub =>
+          sub.items.data.some(item => item.price.id === priceId)
+        );
+
+        if (hasSamePlan) {
+          console.log('⚠️ Customer already has this subscription plan');
+          return res.status(409).json({
+            error: 'You already have an active subscription to this plan',
+            hasActiveSubscription: true
+          });
+        }
       }
 
       // Update customer with Heroic user ID and name if not set
@@ -96,19 +104,26 @@ export default async function handler(req, res) {
         customer = existingCustomers.data[0];
       }
 
-      // Check for active subscriptions
-      const subscriptions = await stripe.subscriptions.list({
-        customer: customer.id,
-        status: 'active',
-        limit: 10
-      });
-
-      if (subscriptions.data.length > 0) {
-        console.log('⚠️ Customer already has active subscription(s)');
-        return res.status(409).json({
-          error: 'You already have an active subscription',
-          hasActiveSubscription: true
+      // Check if customer already has this specific subscription
+      if (priceId) {
+        const subscriptions = await stripe.subscriptions.list({
+          customer: customer.id,
+          status: 'active',
+          limit: 100
         });
+
+        // Check if any active subscription has this price
+        const hasSamePlan = subscriptions.data.some(sub =>
+          sub.items.data.some(item => item.price.id === priceId)
+        );
+
+        if (hasSamePlan) {
+          console.log('⚠️ Customer already has this subscription plan');
+          return res.status(409).json({
+            error: 'You already have an active subscription to this plan',
+            hasActiveSubscription: true
+          });
+        }
       }
 
       console.log('✅ Found multiple customers, using:', customer.id);
