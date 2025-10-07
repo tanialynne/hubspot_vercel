@@ -91,17 +91,19 @@ export default async function handler(req, res) {
       console.log("✅ Created new customer:", customer.id);
     }
 
-    // Build line items for checkout session
-    const lineItems = [];
+    // Determine session mode based on period
+    const sessionMode = (period === "monthly" || period === "annual" || period === "payment_plan")
+      ? "subscription"
+      : "payment";
 
+    // Build line items
+    const lineItems = [];
     if (basePriceId) {
-      // Use existing Stripe Price ID
       lineItems.push({
         price: basePriceId,
         quantity: 1,
       });
     } else {
-      // Create ad-hoc price
       lineItems.push({
         price_data: {
           currency: "usd",
@@ -114,18 +116,13 @@ export default async function handler(req, res) {
       });
     }
 
-    // Determine session mode based on period
-    // monthly, annual, and payment_plan are subscriptions; onetime is a one-time payment
-    const sessionMode = (period === "monthly" || period === "annual" || period === "payment_plan")
-      ? "subscription"
-      : "payment";
-
-    // Build session params
+    // Create checkout session
     const sessionParams = {
+      ui_mode: 'embedded',
       line_items: lineItems,
       mode: sessionMode,
       customer: customer.id,
-      payment_method_types: ['card'],
+      return_url: successUrl + '?session_id={CHECKOUT_SESSION_ID}',
       metadata: {
         basePrice: basePrice.toString(),
         baseLabel,
@@ -140,15 +137,11 @@ export default async function handler(req, res) {
         acTags: acTags || '',
         source: "Heroic Pricing Module",
       },
-      success_url: successUrl + '?session_id={CHECKOUT_SESSION_ID}',
-      cancel_url: successUrl,
     };
 
-    // Only add payment_intent_data for one-time payments
+    // Add payment_intent_data for one-time payments
     if (sessionMode === "payment") {
       sessionParams.payment_intent_data = {
-        setup_future_usage: "off_session",
-        capture_method: 'automatic',
         metadata: {
           basePrice: basePrice.toString(),
           baseLabel,
@@ -158,11 +151,14 @@ export default async function handler(req, res) {
           basePriceId,
           baseProductId,
           productType,
+          period,
+          hubspotFormGuid: hubspotFormGuid || '',
+          acTags: acTags || '',
           source: "Heroic Pricing Module",
         },
       };
     } else {
-      // For subscriptions, add subscription_data instead
+      // Add subscription_data for subscriptions
       sessionParams.subscription_data = {
         metadata: {
           basePrice: basePrice.toString(),
@@ -174,48 +170,27 @@ export default async function handler(req, res) {
           baseProductId,
           productType,
           period,
+          hubspotFormGuid: hubspotFormGuid || '',
+          acTags: acTags || '',
           source: "Heroic Pricing Module",
         },
       };
 
-      // If this is a payment plan with fixed installments, cancel after N payments
+      // For payment plans, add installments metadata
       if (period === "payment_plan" && installments) {
-        sessionParams.subscription_data.trial_settings = {
-          end_behavior: {
-            missing_payment_method: 'cancel'
-          }
-        };
-        // Note: Stripe doesn't natively support "cancel after N payments" in checkout sessions
-        // You'll need to use a webhook to cancel the subscription after 12 payments
         sessionParams.subscription_data.metadata.installments = installments.toString();
         sessionParams.subscription_data.metadata.is_payment_plan = 'true';
       }
     }
 
-    // Create checkout session
     const session = await stripe.checkout.sessions.create(sessionParams);
 
     console.log("✅ Checkout session created:", session.id);
 
-    // For one-time payments, retrieve the payment intent to get client secret
-    if (sessionMode === "payment" && session.payment_intent) {
-      const paymentIntent = await stripe.paymentIntents.retrieve(
-        session.payment_intent
-      );
-
-      return res.status(200).json({
-        clientSecret: paymentIntent.client_secret,
-        sessionId: session.id,
-        customerId: customer.id,
-        isSubscription: false,
-      });
-    }
-
-    // For subscriptions, return the session ID for redirect to Stripe Checkout
     return res.status(200).json({
+      clientSecret: session.client_secret,
       sessionId: session.id,
       customerId: customer.id,
-      isSubscription: true,
     });
   } catch (err) {
     console.error("❌ Error in /create-payment-intent:", err);
