@@ -1,19 +1,19 @@
-import Stripe from 'stripe';
+import Stripe from "stripe";
 
 export default async function handler(req, res) {
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === "OPTIONS") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     return res.status(200).end();
   }
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method Not Allowed" });
   }
 
   try {
@@ -22,40 +22,35 @@ export default async function handler(req, res) {
       lastName,
       email,
       phone,
-      withBump = false,
       basePrice,
-      bumpPrice = 0,
       baseLabel = "Main Product",
-      bumpLabel = "",
       basePriceId = "",
-      bumpPriceId = "",
       baseProductId = "",
-      bumpProductId = "",
-      mode = "stage" // 'stage' or 'live'
+      mode = "stage", // 'stage' or 'live'
     } = req.body;
 
     console.log("📩 Incoming data:", req.body);
 
     // Validate required fields
     if (!firstName || !lastName || !email || !basePrice) {
-      return res.status(400).json({ error: 'Missing required fields' });
+      return res.status(400).json({ error: "Missing required fields" });
     }
 
     // Choose correct Stripe secret key
     const stripeSecretKey =
-      mode === 'live'
+      mode === "live"
         ? process.env.STRIPE_LIVE_SECRET_KEY
         : process.env.STRIPE_STAGE_SECRET_KEY;
 
     const stripe = new Stripe(stripeSecretKey, {
-      apiVersion: '2022-11-15',
+      apiVersion: "2022-11-15",
     });
 
     // Check if customer already exists
     let customer;
     const existingCustomers = await stripe.customers.list({
       email: email,
-      limit: 10
+      limit: 10,
     });
 
     if (existingCustomers.data.length === 1) {
@@ -65,68 +60,102 @@ export default async function handler(req, res) {
       // Update customer info in case phone or name changed
       customer = await stripe.customers.update(customer.id, {
         name: `${firstName} ${lastName}`,
-        phone: phone || customer.phone
+        phone: phone || customer.phone,
       });
 
-      console.log('✅ Using existing customer:', customer.id);
+      console.log("✅ Using existing customer:", customer.id);
     } else if (existingCustomers.data.length > 1) {
       // More than 1 user found, check if any are known heroic users
-      customer = existingCustomers.data.find(x => x.metadata['heroic_user_id']);
+      customer = existingCustomers.data.find(
+        (x) => x.metadata["heroic_user_id"]
+      );
       if (!customer) {
         // If no heroic customer found, grab the first one
         customer = existingCustomers.data[0];
       }
-      console.log('✅ Found multiple customers, using:', customer.id);
+      console.log("✅ Found multiple customers, using:", customer.id);
     } else {
       // Customer doesn't exist, create new one
       customer = await stripe.customers.create({
         name: `${firstName} ${lastName}`,
         email,
-        phone
+        phone,
       });
 
-      console.log('✅ Created new customer:', customer.id);
+      console.log("✅ Created new customer:", customer.id);
     }
 
-    // Calculate total amount
-    const amount = withBump ? basePrice + bumpPrice : basePrice;
+    // Build line items for checkout session
+    const lineItems = [];
 
-    // Create payment intent linked to customer
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount,
-      currency: 'usd',
+    if (basePriceId) {
+      // Use existing Stripe Price ID
+      lineItems.push({
+        price: basePriceId,
+        quantity: 1,
+      });
+    } else {
+      // Create ad-hoc price
+      lineItems.push({
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: baseLabel,
+          },
+          unit_amount: basePrice,
+        },
+        quantity: 1,
+      });
+    }
+
+    // Create checkout session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: lineItems,
+      mode: "payment",
       customer: customer.id,
-      setup_future_usage: 'off_session',
-      automatic_payment_methods: { enabled: true },
-      description: withBump ? `${baseLabel} + ${bumpLabel}` : baseLabel,
+      payment_intent_data: {
+        setup_future_usage: "off_session",
+        metadata: {
+          basePrice: basePrice.toString(),
+          baseLabel,
+          email,
+          firstname: firstName,
+          lastname: lastName,
+          basePriceId,
+          baseProductId,
+          source: "Heroic Pricing Module",
+        },
+      },
       metadata: {
-        withBump: withBump.toString(),
         basePrice: basePrice.toString(),
-        bumpPrice: withBump ? bumpPrice.toString() : '0',
         baseLabel,
-        bumpLabel: withBump ? bumpLabel : '',
         email,
         firstname: firstName,
         lastname: lastName,
         basePriceId,
-        bumpPriceId: withBump ? bumpPriceId : '',
         baseProductId,
-        bumpProductId: withBump ? bumpProductId : '',
-        source: 'Heroic Pricing Module'
-      }
+        source: "Heroic Pricing Module",
+      },
     });
 
-    console.log('✅ Payment intent created:', paymentIntent.id);
+    console.log("✅ Checkout session created:", session.id);
+
+    // Retrieve the payment intent from the session to get client secret
+    const paymentIntent = await stripe.paymentIntents.retrieve(
+      session.payment_intent
+    );
 
     return res.status(200).json({
       clientSecret: paymentIntent.client_secret,
-      customerId: customer.id
+      sessionId: session.id,
+      customerId: customer.id,
     });
   } catch (err) {
-    console.error('❌ Error in /create-payment-intent:', err);
+    console.error("❌ Error in /create-payment-intent:", err);
     return res.status(500).json({
-      error: 'Internal Server Error',
-      details: err.message
+      error: "Internal Server Error",
+      details: err.message,
     });
   }
 }
