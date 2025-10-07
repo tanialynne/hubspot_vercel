@@ -26,6 +26,7 @@ export default async function handler(req, res) {
       baseLabel = "Main Product",
       basePriceId = "",
       baseProductId = "",
+      successUrl = "https://heroic.us",
       mode = "stage", // 'stage' or 'live'
     } = req.body;
 
@@ -108,14 +109,15 @@ export default async function handler(req, res) {
       });
     }
 
-    // Create checkout session
+    // Create checkout session with manual confirmation (for Stripe Elements)
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
       line_items: lineItems,
       mode: "payment",
       customer: customer.id,
+      payment_method_types: ['card'],
       payment_intent_data: {
         setup_future_usage: "off_session",
+        capture_method: 'automatic',
         metadata: {
           basePrice: basePrice.toString(),
           baseLabel,
@@ -137,6 +139,8 @@ export default async function handler(req, res) {
         baseProductId,
         source: "Heroic Pricing Module",
       },
+      success_url: successUrl + '?session_id={CHECKOUT_SESSION_ID}',
+      cancel_url: successUrl,
     });
 
     console.log("✅ Checkout session created:", session.id);
