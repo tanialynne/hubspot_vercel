@@ -64,10 +64,11 @@ export default async function handler(req, res) {
     let isOneTime = period === 'onetime';
 
     if (isOneTime) {
-      // For one-time purchases, create a subscription with add_invoice_items
-      // This ensures entitlements are properly granted
+      // For one-time purchases, create a subscription with items=[] and add_invoice_items
+      // This creates a subscription with a one-time charge that triggers entitlements
       const subscription = await stripe.subscriptions.create({
         customer: customerId,
+        items: [],
         add_invoice_items: [{
           price: priceId,
         }],
