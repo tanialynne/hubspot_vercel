@@ -60,28 +60,66 @@ export default async function handler(req, res) {
     console.log('✅ Retrieved Setup Intent:', setupIntent.id);
     console.log('✅ Payment Method:', setupIntent.payment_method);
 
-    // Create the subscription
-    const subscription = await stripe.subscriptions.create({
-      customer: customerId,
-      items: [{
-        price: priceId,
-      }],
-      default_payment_method: setupIntent.payment_method,
-      metadata: {
-        productLabel: productLabel || '',
-        productType: productType || '',
-        period: period || '',
-        hubspotFormGuid: hubspotFormGuid || '',
-        acTags: acTags || '',
-        userId: userId || '',
-        firstName: firstName || '',
-        lastName: lastName || '',
-        email: email || '',
-        source: 'Heroic Pricing Module'
-      }
-    });
+    let paymentResult;
+    let isOneTime = period === 'onetime';
 
-    console.log('✅ Subscription created:', subscription.id);
+    if (isOneTime) {
+      // For one-time purchases, get the price to determine amount
+      const price = await stripe.prices.retrieve(priceId);
+
+      // Create a Payment Intent for one-time payment
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: price.unit_amount,
+        currency: price.currency,
+        customer: customerId,
+        payment_method: setupIntent.payment_method,
+        confirm: true,
+        off_session: true,
+        metadata: {
+          productLabel: productLabel || '',
+          productType: productType || '',
+          period: 'onetime',
+          hubspotFormGuid: hubspotFormGuid || '',
+          acTags: acTags || '',
+          userId: userId || '',
+          firstName: firstName || '',
+          lastName: lastName || '',
+          email: email || '',
+          source: 'Heroic Pricing Module'
+        }
+      });
+
+      console.log('✅ Payment Intent created:', paymentIntent.id);
+      paymentResult = {
+        id: paymentIntent.id,
+        status: paymentIntent.status,
+        items: { data: [{ price: { unit_amount: price.unit_amount } }] }
+      };
+    } else {
+      // Create the subscription for recurring payments
+      const subscription = await stripe.subscriptions.create({
+        customer: customerId,
+        items: [{
+          price: priceId,
+        }],
+        default_payment_method: setupIntent.payment_method,
+        metadata: {
+          productLabel: productLabel || '',
+          productType: productType || '',
+          period: period || '',
+          hubspotFormGuid: hubspotFormGuid || '',
+          acTags: acTags || '',
+          userId: userId || '',
+          firstName: firstName || '',
+          lastName: lastName || '',
+          email: email || '',
+          source: 'Heroic Pricing Module'
+        }
+      });
+
+      console.log('✅ Subscription created:', subscription.id);
+      paymentResult = subscription;
+    }
 
     // Submit to HubSpot
     if (hubspotFormGuid && email) {
@@ -95,7 +133,7 @@ export default async function handler(req, res) {
           productType,
           period,
           hubspotFormGuid
-        }, subscription);
+        }, paymentResult, isOneTime);
 
         console.log('✅ HubSpot form submitted');
       } catch (err) {
@@ -123,9 +161,10 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
-      subscriptionId: subscription.id,
+      subscriptionId: paymentResult.id,
       customerId: customerId,
-      status: subscription.status
+      status: paymentResult.status,
+      type: isOneTime ? 'payment' : 'subscription'
     });
 
   } catch (err) {
@@ -138,8 +177,8 @@ export default async function handler(req, res) {
 }
 
 // Submit HubSpot form
-async function submitHubspotForm(customerData, subscription) {
-  const totalAmount = subscription.items.data[0].price.unit_amount / 100;
+async function submitHubspotForm(customerData, paymentResult, isOneTime) {
+  const totalAmount = paymentResult.items.data[0].price.unit_amount / 100;
   const productName = customerData.productLabel;
 
   const formData = {
@@ -151,12 +190,13 @@ async function submitHubspotForm(customerData, subscription) {
       { name: '0-1/website', value: 'https://heroic.us' },
       { name: '0-1/purchase_amount', value: totalAmount.toFixed(2) },
       { name: '0-1/product_name', value: productName },
-      { name: '0-1/subscription_id', value: subscription.id },
+      { name: '0-1/subscription_id', value: paymentResult.id },
       {
         name: '0-1/purchase_details',
         value: JSON.stringify({
-          subscriptionId: subscription.id,
-          customerId: subscription.customer,
+          id: paymentResult.id,
+          type: isOneTime ? 'payment' : 'subscription',
+          customerId: paymentResult.customer,
           userId: customerData.userId || '',
           totalAmount: totalAmount.toFixed(2),
           productName,
