@@ -34,11 +34,19 @@ export default async function handler(req, res) {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
 
-    console.log('✅ Checkout session completed:', session.id);
+    console.log('============================================');
+    console.log('📥 WEBHOOK RECEIVED: checkout.session.completed');
+    console.log('Session ID:', session.id);
+    console.log('Customer Email:', session.customer_details?.email);
+    console.log('Amount Total:', session.amount_total / 100);
+    console.log('Payment Status:', session.payment_status);
+    console.log('============================================');
 
     try {
       // Extract metadata
       const metadata = session.metadata;
+      console.log('📦 Metadata:', metadata);
+
       const {
         email,
         firstname,
@@ -47,8 +55,6 @@ export default async function handler(req, res) {
         baseLabel,
         basePriceId,
         baseProductId,
-        productType,
-        period,
         hubspotFormGuid,
         acTags,
         source
@@ -56,50 +62,99 @@ export default async function handler(req, res) {
 
       // Only process if this is from the Heroic Pricing Module
       if (source !== 'Heroic Pricing Module') {
-        console.log('⚠️ Skipping - not from Heroic Pricing Module');
-        return res.json({ received: true });
+        console.log('⚠️ SKIPPED - Not from Heroic Pricing Module (source:', source, ')');
+        return res.json({ received: true, skipped: true, reason: 'not_heroic_module' });
       }
 
       const customerEmail = session.customer_details?.email || email;
       const customerPhone = session.customer_details?.phone || '';
 
+      console.log('👤 Processing for customer:', customerEmail);
+
+      const results = {
+        sessionId: session.id,
+        customerEmail,
+        hubspotSubmitted: false,
+        acTagsApplied: false,
+        errors: []
+      };
+
       // Submit to HubSpot if form GUID provided
       if (hubspotFormGuid && customerEmail) {
-        await submitHubspotForm({
-          firstName: firstname,
-          lastName: lastname,
-          email: customerEmail,
-          phone: customerPhone,
-          basePrice: parseInt(basePrice),
-          baseLabel,
-          basePriceId,
-          baseProductId,
-        }, session.id, hubspotFormGuid, parseInt(basePrice) / 100, baseLabel);
+        console.log('📧 Submitting to HubSpot form:', hubspotFormGuid);
+        try {
+          await submitHubspotForm({
+            firstName: firstname,
+            lastName: lastname,
+            email: customerEmail,
+            phone: customerPhone,
+            basePrice: parseInt(basePrice),
+            baseLabel,
+            basePriceId,
+            baseProductId,
+          }, session.id, hubspotFormGuid, parseInt(basePrice) / 100, baseLabel);
 
-        console.log('✅ HubSpot form submitted for:', customerEmail);
+          console.log('✅ HubSpot form submitted successfully');
+          results.hubspotSubmitted = true;
+        } catch (err) {
+          console.error('❌ HubSpot submission failed:', err.message);
+          results.errors.push(`HubSpot: ${err.message}`);
+        }
+      } else {
+        console.log('⚠️ Skipping HubSpot - missing form GUID or email');
       }
 
       // Apply ActiveCampaign tags if configured
       if (acTags && customerEmail) {
         const tags = acTags.split(',').map(t => t.trim()).filter(t => t);
         if (tags.length > 0) {
-          await fetch('https://hubspot-vercel-chi.vercel.app/api/tag-with-text', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email: customerEmail,
-              tags: tags
-            })
-          });
-          console.log('✅ ActiveCampaign tags applied for:', customerEmail);
+          console.log('🏷️ Applying AC tags:', tags);
+          try {
+            const acResponse = await fetch('https://hubspot-vercel-chi.vercel.app/api/tag-with-text', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: customerEmail,
+                tags: tags
+              })
+            });
+
+            if (acResponse.ok) {
+              console.log('✅ ActiveCampaign tags applied successfully');
+              results.acTagsApplied = true;
+            } else {
+              const errorText = await acResponse.text();
+              console.error('❌ AC tagging failed:', errorText);
+              results.errors.push(`AC: ${errorText}`);
+            }
+          } catch (err) {
+            console.error('❌ AC tagging error:', err.message);
+            results.errors.push(`AC: ${err.message}`);
+          }
         }
+      } else {
+        console.log('⚠️ Skipping AC tags - no tags configured or missing email');
       }
 
+      console.log('============================================');
+      console.log('✅ WEBHOOK PROCESSING COMPLETE');
+      console.log('Results:', results);
+      console.log('============================================');
+
+      // Return detailed results (Stripe ignores this, but useful for manual testing)
+      return res.json({ received: true, results });
+
     } catch (error) {
-      console.error('❌ Error processing webhook:', error);
+      console.error('============================================');
+      console.error('❌ CRITICAL ERROR processing webhook:', error);
+      console.error('Stack:', error.stack);
+      console.error('============================================');
       // Don't return error to Stripe - we've received the webhook
+      return res.json({ received: true, error: error.message });
     }
   }
+
+  console.log('ℹ️ Webhook event type not handled:', event.type);
 
   // Return a response to acknowledge receipt of the event
   res.json({ received: true });
