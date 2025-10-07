@@ -64,12 +64,15 @@ export default async function handler(req, res) {
     let mutation, variables;
 
     if (isSignIn) {
-      // Sign In mutation
+      // Sign In mutation (uses 'login' not 'signIn')
       mutation = `
-        mutation SignIn($email: String!, $password: String!) {
-          signIn(input: { email: $email, password: $password }) {
+        mutation Login($email: String!, $password: String!) {
+          login(email: $email, password: $password) {
             userId
-            token
+            sessionCookie {
+              value
+              expires
+            }
           }
         }
       `;
@@ -128,7 +131,7 @@ export default async function handler(req, res) {
       });
     }
 
-    const responseData = isSignIn ? result.data?.signIn : result.data?.signUp;
+    const responseData = isSignIn ? result.data?.login : result.data?.signUp;
 
     if (!responseData?.userId) {
       return res.status(500).json({ error: `Failed to ${isSignIn ? 'sign in' : 'create account'} - no user ID returned` });
@@ -136,18 +139,24 @@ export default async function handler(req, res) {
 
     console.log(`✅ ${isSignIn ? 'Signed in' : 'Account created'}:`, responseData.userId);
 
+    // Extract token from sessionCookie
+    const token = responseData.sessionCookie?.value || responseData.token;
+
     // For sign-in, fetch user profile data
     let userFirstName = firstName || '';
     let userLastName = '';
 
-    if (isSignIn && responseData.token) {
+    if (isSignIn && token) {
       try {
         const profileQuery = `
-          query GetUser {
-            user {
-              firstName
-              lastName
+          query Me {
+            me {
+              id
               email
+              userProfile {
+                firstName
+                lastName
+              }
             }
           }
         `;
@@ -156,7 +165,7 @@ export default async function handler(req, res) {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${responseData.token}`
+            'Authorization': `Bearer ${token}`
           },
           body: JSON.stringify({
             query: profileQuery
@@ -165,9 +174,9 @@ export default async function handler(req, res) {
 
         const profileResult = await profileResponse.json();
 
-        if (profileResult.data?.user) {
-          userFirstName = profileResult.data.user.firstName || '';
-          userLastName = profileResult.data.user.lastName || '';
+        if (profileResult.data?.me?.userProfile) {
+          userFirstName = profileResult.data.me.userProfile.firstName || '';
+          userLastName = profileResult.data.me.userProfile.lastName || '';
         }
       } catch (err) {
         console.error('⚠️ Failed to fetch user profile:', err);
@@ -177,7 +186,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       userId: responseData.userId,
-      token: responseData.token,
+      token: token,
       firstName: userFirstName,
       lastName: userLastName,
       email: email,
