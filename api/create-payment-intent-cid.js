@@ -91,106 +91,61 @@ export default async function handler(req, res) {
       console.log("✅ Created new customer:", customer.id);
     }
 
-    // Determine session mode based on period
-    const sessionMode = (period === "monthly" || period === "annual" || period === "payment_plan")
-      ? "subscription"
-      : "payment";
+    // Determine if this is a subscription or one-time payment
+    const isSubscription = (period === "monthly" || period === "annual" || period === "payment_plan");
 
-    // Build line items
-    const lineItems = [];
-    if (basePriceId) {
-      lineItems.push({
-        price: basePriceId,
-        quantity: 1,
-      });
-    } else {
-      lineItems.push({
-        price_data: {
-          currency: "usd",
-          product_data: {
-            name: baseLabel,
-          },
-          unit_amount: basePrice,
-        },
-        quantity: 1,
-      });
-    }
-
-    // Create checkout session
-    const sessionParams = {
-      ui_mode: 'embedded',
-      line_items: lineItems,
-      mode: sessionMode,
-      customer: customer.id,
-      return_url: successUrl + '?session_id={CHECKOUT_SESSION_ID}',
-      metadata: {
-        basePrice: basePrice.toString(),
-        baseLabel,
-        email,
-        firstname: firstName,
-        lastname: lastName,
-        basePriceId,
-        baseProductId,
-        productType,
-        period,
-        hubspotFormGuid: hubspotFormGuid || '',
-        acTags: acTags || '',
-        source: "Heroic Pricing Module",
-      },
+    // Create Checkout Session with CUSTOM UI mode
+    // This allows us to use our own form while still creating proper Checkout Sessions
+    // that Revenue Cat can recognize
+    const sessionMetadata = {
+      basePrice: basePrice.toString(),
+      baseLabel,
+      email,
+      firstname: firstName,
+      lastname: lastName,
+      basePriceId,
+      baseProductId,
+      productType,
+      period,
+      installments: installments?.toString() || '',
+      hubspotFormGuid: hubspotFormGuid || '',
+      acTags: acTags || '',
+      source: "Heroic Pricing Module",
     };
 
-    // Add payment_intent_data for one-time payments
-    if (sessionMode === "payment") {
-      sessionParams.payment_intent_data = {
-        metadata: {
-          basePrice: basePrice.toString(),
-          baseLabel,
-          email,
-          firstname: firstName,
-          lastname: lastName,
-          basePriceId,
-          baseProductId,
-          productType,
-          period,
-          hubspotFormGuid: hubspotFormGuid || '',
-          acTags: acTags || '',
-          source: "Heroic Pricing Module",
-        },
-      };
-    } else {
-      // Add subscription_data for subscriptions
-      sessionParams.subscription_data = {
-        metadata: {
-          basePrice: basePrice.toString(),
-          baseLabel,
-          email,
-          firstname: firstName,
-          lastname: lastName,
-          basePriceId,
-          baseProductId,
-          productType,
-          period,
-          hubspotFormGuid: hubspotFormGuid || '',
-          acTags: acTags || '',
-          source: "Heroic Pricing Module",
-        },
-      };
+    const sessionMode = isSubscription ? "subscription" : "payment";
+    const lineItems = isSubscription && basePriceId
+      ? [{ price: basePriceId, quantity: 1 }]
+      : [{ price_data: { currency: "usd", product_data: { name: baseLabel }, unit_amount: basePrice }, quantity: 1 }];
 
-      // For payment plans, add installments metadata
-      if (period === "payment_plan" && installments) {
-        sessionParams.subscription_data.metadata.installments = installments.toString();
-        sessionParams.subscription_data.metadata.is_payment_plan = 'true';
-      }
-    }
+    const checkoutSession = await stripe.checkout.sessions.create({
+      ui_mode: "custom", // KEY: This allows custom form with no iframe!
+      customer: customer.id,
+      mode: sessionMode,
+      line_items: lineItems,
+      return_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
+      metadata: sessionMetadata,
+      // Add subscription metadata for payment plans
+      ...(period === "payment_plan" && installments && {
+        subscription_data: {
+          metadata: {
+            ...sessionMetadata,
+            is_payment_plan: 'true',
+          }
+        }
+      }),
+    });
 
-    const session = await stripe.checkout.sessions.create(sessionParams);
+    console.log("✅ Checkout session created:", checkoutSession.id);
+    console.log("✅ Client secret:", checkoutSession.client_secret);
 
-    console.log("✅ Checkout session created:", session.id);
-
+    // Return the session with client_secret for custom UI
     return res.status(200).json({
-      clientSecret: session.client_secret,
-      sessionId: session.id,
+      clientSecret: checkoutSession.client_secret,
+      checkoutSessionId: checkoutSession.id,
       customerId: customer.id,
+      isSubscription: isSubscription,
+      priceId: basePriceId,
     });
   } catch (err) {
     console.error("❌ Error in /create-payment-intent:", err);
