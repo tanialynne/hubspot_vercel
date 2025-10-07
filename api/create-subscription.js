@@ -77,17 +77,17 @@ export default async function handler(req, res) {
         off_session: true,
         description: productLabel,
         metadata: {
-          productLabel: productLabel || '',
-          productType: productType || '',
-          period: 'onetime',
-          hubspotFormGuid: hubspotFormGuid || '',
-          acTags: acTags || '',
-          userId: userId || '',
-          firstName: firstName || '',
-          lastName: lastName || '',
-          email: email || '',
-          source: 'Heroic Pricing Module'
-        }
+          productLabel: productLabel || "",
+          productType: productType || "",
+          period: "onetime",
+          hubspotFormGuid: hubspotFormGuid || "",
+          acTags: acTags || "",
+          userId: userId || "",
+          firstName: firstName || "",
+          lastName: lastName || "",
+          email: email || "",
+          source: "Heroic Pricing Module",
+        },
       });
 
       console.log('✅ Payment Intent created:', paymentIntent.id);
@@ -149,12 +149,19 @@ export default async function handler(req, res) {
       try {
         const tags = acTags.split(',').map(t => t.trim()).filter(t => t);
         if (tags.length > 0) {
-          await fetch('https://hubspot-vercel-chi.vercel.app/api/tag-with-text', {
+          const acResponse = await fetch('https://hubspot-vercel-chi.vercel.app/api/tag-with-text', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, tags })
           });
-          console.log('✅ AC tags applied:', tags);
+
+          const acResult = await acResponse.json();
+
+          if (!acResponse.ok) {
+            console.error('❌ AC tagging failed:', acResponse.status, acResult);
+          } else {
+            console.log('✅ AC tags applied:', tags, acResult);
+          }
         }
       } catch (err) {
         console.error('❌ AC tagging failed:', err.message);
