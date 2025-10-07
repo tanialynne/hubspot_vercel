@@ -1,6 +1,5 @@
 /**
  * Heroic Account Authentication API Endpoint
- *
  * This endpoint handles both sign-up and sign-in via GraphQL.
  *
  * MODE CONFIGURATION:
