@@ -27,7 +27,8 @@ export default async function handler(req, res) {
       basePriceId = "",
       baseProductId = "",
       productType = "",
-      period = "onetime", // 'monthly', 'annual', or 'onetime'
+      period = "onetime", // 'monthly', 'annual', 'payment_plan', or 'onetime'
+      installments = null, // Number of installments for payment plans
       successUrl = "https://heroic.us",
       mode = "stage", // 'stage' or 'live'
     } = req.body;
@@ -112,8 +113,8 @@ export default async function handler(req, res) {
     }
 
     // Determine session mode based on period
-    // monthly and annual are subscriptions, onetime is a one-time payment
-    const sessionMode = (period === "monthly" || period === "annual")
+    // monthly, annual, and payment_plan are subscriptions; onetime is a one-time payment
+    const sessionMode = (period === "monthly" || period === "annual" || period === "payment_plan")
       ? "subscription"
       : "payment";
 
@@ -167,9 +168,23 @@ export default async function handler(req, res) {
           basePriceId,
           baseProductId,
           productType,
+          period,
           source: "Heroic Pricing Module",
         },
       };
+
+      // If this is a payment plan with fixed installments, cancel after N payments
+      if (period === "payment_plan" && installments) {
+        sessionParams.subscription_data.trial_settings = {
+          end_behavior: {
+            missing_payment_method: 'cancel'
+          }
+        };
+        // Note: Stripe doesn't natively support "cancel after N payments" in checkout sessions
+        // You'll need to use a webhook to cancel the subscription after 12 payments
+        sessionParams.subscription_data.metadata.installments = installments.toString();
+        sessionParams.subscription_data.metadata.is_payment_plan = 'true';
+      }
     }
 
     // Create checkout session
