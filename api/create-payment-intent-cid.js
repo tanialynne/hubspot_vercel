@@ -26,6 +26,8 @@ export default async function handler(req, res) {
       baseLabel = "Main Product",
       basePriceId = "",
       baseProductId = "",
+      productType = "",
+      period = "onetime", // 'monthly', 'annual', or 'onetime'
       successUrl = "https://heroic.us",
       mode = "stage", // 'stage' or 'live'
     } = req.body;
@@ -109,13 +111,36 @@ export default async function handler(req, res) {
       });
     }
 
-    // Create checkout session with manual confirmation (for Stripe Elements)
-    const session = await stripe.checkout.sessions.create({
+    // Determine session mode based on period
+    // monthly and annual are subscriptions, onetime is a one-time payment
+    const sessionMode = (period === "monthly" || period === "annual")
+      ? "subscription"
+      : "payment";
+
+    // Build session params
+    const sessionParams = {
       line_items: lineItems,
-      mode: "payment",
+      mode: sessionMode,
       customer: customer.id,
       payment_method_types: ['card'],
-      payment_intent_data: {
+      metadata: {
+        basePrice: basePrice.toString(),
+        baseLabel,
+        email,
+        firstname: firstName,
+        lastname: lastName,
+        basePriceId,
+        baseProductId,
+        productType,
+        source: "Heroic Pricing Module",
+      },
+      success_url: successUrl + '?session_id={CHECKOUT_SESSION_ID}',
+      cancel_url: successUrl,
+    };
+
+    // Only add payment_intent_data for one-time payments
+    if (sessionMode === "payment") {
+      sessionParams.payment_intent_data = {
         setup_future_usage: "off_session",
         capture_method: 'automatic',
         metadata: {
@@ -126,22 +151,29 @@ export default async function handler(req, res) {
           lastname: lastName,
           basePriceId,
           baseProductId,
+          productType,
           source: "Heroic Pricing Module",
         },
-      },
-      metadata: {
-        basePrice: basePrice.toString(),
-        baseLabel,
-        email,
-        firstname: firstName,
-        lastname: lastName,
-        basePriceId,
-        baseProductId,
-        source: "Heroic Pricing Module",
-      },
-      success_url: successUrl + '?session_id={CHECKOUT_SESSION_ID}',
-      cancel_url: successUrl,
-    });
+      };
+    } else {
+      // For subscriptions, add subscription_data instead
+      sessionParams.subscription_data = {
+        metadata: {
+          basePrice: basePrice.toString(),
+          baseLabel,
+          email,
+          firstname: firstName,
+          lastname: lastName,
+          basePriceId,
+          baseProductId,
+          productType,
+          source: "Heroic Pricing Module",
+        },
+      };
+    }
+
+    // Create checkout session
+    const session = await stripe.checkout.sessions.create(sessionParams);
 
     console.log("✅ Checkout session created:", session.id);
 
