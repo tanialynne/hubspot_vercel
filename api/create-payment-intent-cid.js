@@ -29,6 +29,8 @@ export default async function handler(req, res) {
       productType = "",
       period = "onetime", // 'monthly', 'annual', 'payment_plan', or 'onetime'
       installments = null, // Number of installments for payment plans
+      hubspotFormGuid = "",
+      acTags = "",
       successUrl = "https://heroic.us",
       mode = "stage", // 'stage' or 'live'
     } = req.body;
@@ -133,6 +135,9 @@ export default async function handler(req, res) {
         basePriceId,
         baseProductId,
         productType,
+        period,
+        hubspotFormGuid: hubspotFormGuid || '',
+        acTags: acTags || '',
         source: "Heroic Pricing Module",
       },
       success_url: successUrl + '?session_id={CHECKOUT_SESSION_ID}',
@@ -192,16 +197,59 @@ export default async function handler(req, res) {
 
     console.log("✅ Checkout session created:", session.id);
 
-    // Retrieve the payment intent from the session to get client secret
-    const paymentIntent = await stripe.paymentIntents.retrieve(
-      session.payment_intent
-    );
+    // For one-time payments, retrieve the payment intent to get client secret
+    // For subscriptions, we need to handle differently
+    if (sessionMode === "payment" && session.payment_intent) {
+      const paymentIntent = await stripe.paymentIntents.retrieve(
+        session.payment_intent
+      );
 
-    return res.status(200).json({
-      clientSecret: paymentIntent.client_secret,
-      sessionId: session.id,
-      customerId: customer.id,
-    });
+      return res.status(200).json({
+        clientSecret: paymentIntent.client_secret,
+        sessionId: session.id,
+        customerId: customer.id,
+        isSubscription: false,
+      });
+    } else {
+      // For subscriptions, we need to get the setup intent or first invoice
+      // to allow client-side payment confirmation
+
+      // Retrieve the session with expanded details
+      const expandedSession = await stripe.checkout.sessions.retrieve(session.id, {
+        expand: ['setup_intent', 'subscription']
+      });
+
+      let clientSecretToReturn = null;
+
+      // If there's a setup intent (subscription not yet created), use that
+      if (expandedSession.setup_intent && expandedSession.setup_intent.client_secret) {
+        clientSecretToReturn = expandedSession.setup_intent.client_secret;
+      }
+      // If subscription exists, get the latest invoice's payment intent
+      else if (expandedSession.subscription) {
+        const subscription = await stripe.subscriptions.retrieve(
+          expandedSession.subscription.id,
+          { expand: ['latest_invoice.payment_intent'] }
+        );
+
+        if (subscription.latest_invoice && subscription.latest_invoice.payment_intent) {
+          clientSecretToReturn = subscription.latest_invoice.payment_intent.client_secret;
+        }
+      }
+
+      // If we still don't have a client secret, fall back to session client secret
+      if (!clientSecretToReturn) {
+        clientSecretToReturn = session.client_secret;
+      }
+
+      return res.status(200).json({
+        clientSecret: clientSecretToReturn,
+        sessionId: session.id,
+        customerId: customer.id,
+        isSubscription: true,
+        subscriptionId: expandedSession.subscription?.id || null,
+      });
+    }
   } catch (err) {
     console.error("❌ Error in /create-payment-intent:", err);
     return res.status(500).json({
