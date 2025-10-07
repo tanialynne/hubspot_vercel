@@ -49,12 +49,13 @@ export default async function handler(req, res) {
 
       const {
         email,
-        firstname,
-        lastname,
-        basePrice,
-        baseLabel,
-        basePriceId,
-        baseProductId,
+        firstName,
+        lastName,
+        phone,
+        userId,
+        productLabel,
+        productType,
+        period,
         hubspotFormGuid,
         acTags,
         source
@@ -84,15 +85,15 @@ export default async function handler(req, res) {
         console.log('📧 Submitting to HubSpot form:', hubspotFormGuid);
         try {
           await submitHubspotForm({
-            firstName: firstname,
-            lastName: lastname,
+            firstName,
+            lastName,
             email: customerEmail,
-            phone: customerPhone,
-            basePrice: parseInt(basePrice),
-            baseLabel,
-            basePriceId,
-            baseProductId,
-          }, session.id, hubspotFormGuid, parseInt(basePrice) / 100, baseLabel);
+            phone: customerPhone || phone,
+            userId,
+            productLabel,
+            productType,
+            period
+          }, session, hubspotFormGuid);
 
           console.log('✅ HubSpot form submitted successfully');
           results.hubspotSubmitted = true;
@@ -161,7 +162,10 @@ export default async function handler(req, res) {
 }
 
 // Submit HubSpot form
-async function submitHubspotForm(customerData, sessionId, hubspotFormGuid, totalAmount, productName) {
+async function submitHubspotForm(customerData, session, hubspotFormGuid) {
+  const totalAmount = session.amount_total / 100;
+  const productName = customerData.productLabel;
+
   const formData = {
     fields: [
       { name: '0-1/firstname', value: customerData.firstName },
@@ -171,17 +175,19 @@ async function submitHubspotForm(customerData, sessionId, hubspotFormGuid, total
       { name: '0-1/website', value: 'https://heroic.us' },
       { name: '0-1/purchase_amount', value: totalAmount.toFixed(2) },
       { name: '0-1/product_name', value: productName },
-      { name: '0-1/checkout_session_id', value: sessionId },
+      { name: '0-1/checkout_session_id', value: session.id },
       {
         name: '0-1/purchase_details',
         value: JSON.stringify({
-          sessionId,
+          checkoutSessionId: session.id,
+          customerId: session.customer,
+          subscriptionId: session.subscription || '',
+          userId: customerData.userId || '',
           totalAmount: totalAmount.toFixed(2),
           productName,
-          basePrice: (customerData.basePrice / 100).toFixed(2),
-          baseLabel: customerData.baseLabel,
-          basePriceId: customerData.basePriceId,
-          baseProductId: customerData.baseProductId
+          productType: customerData.productType || '',
+          period: customerData.period,
+          source: 'Heroic Pricing Module'
         })
       }
     ]
