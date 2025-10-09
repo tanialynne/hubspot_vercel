@@ -133,41 +133,10 @@ export default async function handler(req, res) {
       }
     }
 
-    // Step 2: Create or update RevenueCat customer first
-    console.log(`👤 Creating/updating RevenueCat customer: ${firebaseUserId}`);
-
+    // Step 2: Grant RevenueCat entitlement
+    // Note: Customer will be created automatically by RevenueCat when granting entitlement
     const REVENUECAT_SECRET_KEY = 'sk_jDIqjivDBkOxfPYAETptVTOIsMDiS';
     const REVENUECAT_PROJECT_ID = 'fda392bf';
-
-    // Create customer in RevenueCat (idempotent - safe to call even if exists)
-    const createCustomerResponse = await fetch(
-      `https://api.revenuecat.com/v2/projects/${REVENUECAT_PROJECT_ID}/customers`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${REVENUECAT_SECRET_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          id: firebaseUserId,
-          attributes: [
-            { key: '$email', value: email },
-            { key: '$displayName', value: `${firstName} ${lastName}`.trim() }
-          ]
-        })
-      }
-    );
-
-    if (!createCustomerResponse.ok && createCustomerResponse.status !== 409) {
-      // 409 = already exists, which is fine
-      const customerError = await createCustomerResponse.json();
-      console.error('⚠️ RevenueCat customer creation warning:', customerError);
-      // Continue anyway - customer might already exist
-    } else {
-      console.log('✅ RevenueCat customer created/exists');
-    }
-
-    // Step 3: Grant RevenueCat entitlement
     console.log(`🎟️ Granting RevenueCat entitlement: ${entitlement} for ${duration}`);
 
     const revenueCatResponse = await fetch(
