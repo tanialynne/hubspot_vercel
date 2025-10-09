@@ -94,15 +94,17 @@ export default async function handler(req, res) {
       });
     }
 
-    // Map Stripe Product SKU to RevenueCat Entitlement Identifier
+    // Map Product SKU to RevenueCat Entitlement Identifier
     // NOTE: Use the Identifier from RevenueCat Dashboard Entitlements tab
     // Go to Product Catalog > Entitlements > Click on entitlement > Copy the "Identifier" field at the TOP
     const skuToEntitlement = {
       "prod_T5BhaH9IrB8aSx": "prod_T5BhaH9IrB8aSx", // Heroic Live (tier2)
       "prod_Khm6LKC72e2PKq": "prod_Khm6LKC72e2PKq", // Heroic Premium
-      "prod_T6eTaEOoW1jH3N": "prod_T6eTaEOoW1jH3N", // Mastery test
+      "prod_T6eTaEOoW1jH3N": "prod_T6eTaEOoW1jH3N", // Mastery one-time
+      "mastery_multi_pay": "prod_T6eTaEOoW1jH3N", // Mastery multi-pay → same entitlement
       "prod_RLpwKxAeiuNmCe": "prod_RLpwKxAeiuNmCe", // Heroic Elite
-      "prod_T9LTjZp9tDN642": "prod_T9LTjZp9tDN642", // Coach test
+      "prod_T9LTjZp9tDN642": "prod_T9LTjZp9tDN642", // Coach one-time
+      "coach_multi_pay": "prod_T9LTjZp9tDN642", // Coach multi-pay → same entitlement
     };
 
     const entitlement = skuToEntitlement[productSku];
@@ -277,8 +279,9 @@ export default async function handler(req, res) {
       `🎟️ Granting RevenueCat entitlement: ${entitlement} for ${duration}`
     );
 
-    // Determine if this is a one-time purchase (Coach) or subscription
-    const isOneTimePurchase = productSku === 'prod_T9LTjZp9tDN642'; // Coach bundle
+    // Determine purchase type and duration
+    const isOneTimePurchase = productSku === 'prod_T9LTjZp9tDN642' || productSku === 'prod_T6eTaEOoW1jH3N';
+    const isMultiPayPlan = productSku === 'coach_multi_pay' || productSku === 'mastery_multi_pay';
 
     // Calculate end time based on purchase type
     const startTime = Date.now();
@@ -287,7 +290,12 @@ export default async function handler(req, res) {
     if (isOneTimePurchase) {
       // One-time purchases: 100 years (lifetime access)
       endTime = startTime + (100 * 365 * 24 * 60 * 60 * 1000);
-      console.log(`🎁 One-time purchase detected - granting lifetime access (100 years)`);
+      console.log(`🎁 One-time purchase (${productSku}) - granting lifetime access (100 years)`);
+    } else if (isMultiPayPlan) {
+      // Multi-pay plan: grant 35 days per payment (like monthly subscription)
+      // User gets renewed each month until payment 12, then needs manual conversion to lifetime
+      endTime = startTime + (35 * 24 * 60 * 60 * 1000);
+      console.log(`📅 Multi-pay plan (${productSku}) - granting 35 days (use renewal workflow for subsequent payments)`);
     } else if (duration === 'P1M') {
       // Monthly subscription: 35 days (5 day grace period)
       endTime = startTime + (35 * 24 * 60 * 60 * 1000);
