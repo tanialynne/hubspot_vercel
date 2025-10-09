@@ -221,7 +221,7 @@ export default async function handler(req, res) {
     console.log(`⏰ Setting entitlement from ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
 
     const revenueCatResponse = await fetch(
-      `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(firebaseUserId)}/entitlements/${entitlement}/promotional`,
+      `https://api.revenuecat.com/v1/receipts`,
       {
         method: "POST",
         headers: {
@@ -230,8 +230,16 @@ export default async function handler(req, res) {
           "X-Platform": "stripe",
         },
         body: JSON.stringify({
-          start_time_ms: startTime,
-          end_time_ms: endTime,
+          app_user_id: firebaseUserId,
+            fetch_token: `hubspot_${productSku}_${Date.now()}`, // Unique receipt token
+               product_id: entitlement,
+              price: billingPeriod === 'monthly' ? 15.00 : 149.00, // Placeholder prices
+             currency: "USD",
+              is_restore: false,
+                 attributes: {
+                   $email: { value: email },
+                  $displayName: { value: `${firstName} ${lastName}`.trim() },
+                  },
         }),
       }
     );
