@@ -45,8 +45,9 @@ export default async function handler(req, res) {
     } = req.body;
 
     console.log(
-      `📩 Processing entitlement grant for: ${email}, SKU: ${productSku}, Period: ${billingPeriod}`
+      `📩 Processing entitlement grant for: ${email}, SKU: ${productSku}, Period: ${billingPeriod}, Mode: ${mode}`
     );
+    console.log(`📋 Full request body:`, JSON.stringify(req.body, null, 2));
 
     // Validate required fields
     if (!email || !password || !firstName || !productSku) {
