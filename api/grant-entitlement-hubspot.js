@@ -92,7 +92,7 @@ export default async function handler(req, res) {
           firstName,
           lastName,
           action: "signup",
-          mode: "live",
+          mode,
         }),
       }
     );
@@ -145,7 +145,7 @@ export default async function handler(req, res) {
                 email,
                 password,
                 action: "signin",
-                mode: "live",
+                mode,
               }),
             }
           );
