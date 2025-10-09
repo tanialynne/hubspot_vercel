@@ -130,7 +130,7 @@ export default async function handler(req, res) {
     // Step 2: Grant RevenueCat entitlement
     // Note: Customer will be created automatically by RevenueCat when granting entitlement
     const REVENUECAT_SECRET_KEY = "sk_jDIqjivDBkOxfPYAETptVTOIsMDiS";
-    const REVENUECAT_PROJECT_ID = "fda392bf";
+    const REVENUECAT_PROJECT_ID = "projfda392bf";
     console.log(
       `🎟️ Granting RevenueCat entitlement: ${entitlement} for ${duration}`
     );
