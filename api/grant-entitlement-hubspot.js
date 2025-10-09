@@ -7,7 +7,7 @@
  * Expected request body:
  * {
  *   "email": "user@example.com",
- *   "password": "userPassword123!",
+ *   "password": "userPassword123!" (OPTIONAL - will auto-generate if not provided),
  *   "firstName": "John",
  *   "lastName": "Doe",
  *   "productSku": "prod_LIqSeKqv73Qh1Q",
@@ -15,6 +15,35 @@
  *   "mode": "stage" | "live"
  * }
  */
+
+/**
+ * Generate a secure random password
+ * Format: 12 characters with uppercase, lowercase, numbers, and symbols
+ */
+function generateSecurePassword() {
+  const length = 12;
+  const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+  const numbers = '0123456789';
+  const symbols = '!@#$%^&*';
+
+  const allChars = uppercase + lowercase + numbers + symbols;
+
+  // Ensure at least one of each type
+  let password = '';
+  password += uppercase[Math.floor(Math.random() * uppercase.length)];
+  password += lowercase[Math.floor(Math.random() * lowercase.length)];
+  password += numbers[Math.floor(Math.random() * numbers.length)];
+  password += symbols[Math.floor(Math.random() * symbols.length)];
+
+  // Fill the rest randomly
+  for (let i = password.length; i < length; i++) {
+    password += allChars[Math.floor(Math.random() * allChars.length)];
+  }
+
+  // Shuffle the password
+  return password.split('').sort(() => Math.random() - 0.5).join('');
+}
 
 export default async function handler(req, res) {
   // CORS headers
@@ -36,7 +65,7 @@ export default async function handler(req, res) {
   try {
     const {
       email,
-      password,
+      password: providedPassword,
       firstName,
       lastName = "",
       productSku,
@@ -49,11 +78,19 @@ export default async function handler(req, res) {
     );
     console.log(`📋 Full request body:`, JSON.stringify(req.body, null, 2));
 
+    // Auto-generate secure password if not provided
+    const password = providedPassword || generateSecurePassword();
+    const passwordWasGenerated = !providedPassword;
+
+    if (passwordWasGenerated) {
+      console.log(`🔐 Auto-generated secure password for user`);
+    }
+
     // Validate required fields
-    if (!email || !password || !firstName || !productSku) {
+    if (!email || !firstName || !productSku) {
       return res.status(400).json({
         error: "Missing required fields",
-        required: ["email", "password", "firstName", "productSku"],
+        required: ["email", "firstName", "productSku"],
       });
     }
 
@@ -92,7 +129,7 @@ export default async function handler(req, res) {
           firstName,
           lastName,
           action: "signup",
-          mode,
+          mode: "live",
         }),
       }
     );
@@ -145,7 +182,7 @@ export default async function handler(req, res) {
                 email,
                 password,
                 action: "signin",
-                mode,
+                mode: "live",
               }),
             }
           );
@@ -300,9 +337,18 @@ export default async function handler(req, res) {
     const rcData = await revenueCatResponse.json();
     console.log("✅ RevenueCat entitlement granted:", rcData);
 
+    // Generate password reset URL
+    const passwordResetUrl = mode === 'live'
+      ? 'https://heroic.us/reset-password'
+      : 'https://dev.heroic.us/reset-password';
+
     return res.status(200).json({
       success: true,
       userId: firebaseUserId,
+      email: email,
+      password: passwordWasGenerated ? password : '[provided by user]',
+      passwordWasGenerated: passwordWasGenerated,
+      passwordResetUrl: passwordResetUrl,
       entitlement: entitlement,
       duration: duration,
       accountCreated: accountCreated,
