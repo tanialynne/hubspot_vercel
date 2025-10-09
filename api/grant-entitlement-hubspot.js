@@ -1,21 +1,3 @@
-/**
- * HubSpot Webhook Endpoint: Create Account + Grant RevenueCat Entitlement
- *
- * This endpoint is called by HubSpot workflows when a payment succeeds.
- * It creates a Firebase account and grants the appropriate RevenueCat entitlement.
- *
- * Expected request body:
- * {
- *   "email": "user@example.com",
- *   "password": "userPassword123!",
- *   "firstName": "John",
- *   "lastName": "Doe",
- *   "productSku": "prod_LIqSeKqv73Qh1Q",
- *   "billingPeriod": "monthly" | "annually",
- *   "mode": "stage" | "live"
- * }
- */
-
 export default async function handler(req, res) {
   // CORS headers
   if (req.method === "OPTIONS") {
