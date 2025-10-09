@@ -1,3 +1,21 @@
+/**
+ * HubSpot Webhook Endpoint: Create Account + Grant RevenueCat Entitlement
+ *
+ * This endpoint is called by HubSpot workflows when a payment succeeds.
+ * It creates a Firebase account and grants the appropriate RevenueCat entitlement.
+ *
+ * Expected request body:
+ * {
+ *   "email": "user@example.com",
+ *   "password": "userPassword123!",
+ *   "firstName": "John",
+ *   "lastName": "Doe",
+ *   "productSku": "prod_LIqSeKqv73Qh1Q",
+ *   "billingPeriod": "monthly" | "annually",
+ *   "mode": "stage" | "live"
+ * }
+ */
+
 export default async function handler(req, res) {
   // CORS headers
   if (req.method === "OPTIONS") {
@@ -38,15 +56,14 @@ export default async function handler(req, res) {
       });
     }
 
-    // Map Stripe Product SKU to RevenueCat Entitlement ID
-    // NOTE: Use the RevenueCat Entitlement ID (entlXXXXXX), not the identifier name
-    // Get these from RevenueCat Dashboard → Entitlements → Click entitlement → "RevenueCatId"
+    // Map Stripe Product SKU to RevenueCat Entitlement Identifier
+    // NOTE: Use the Identifier from RevenueCat Dashboard, NOT the RevenueCatId
     const skuToEntitlement = {
-       "prod_T5BhaH9IrB8aSx": "prod_T5BhaH9IrB8aSx", // Heroic Live (tier2)
-        "prod_Khm6LKC72e2PKq": "prod_Khm6LKC72e2PKq", // Heroic Premium
-        "prod_T6eTaEOoW1jH3N": "prod_T6eTaEOoW1jH3N", // Mastery test
-        "prod_RLpwKxAeiuNmCe": "prod_RLpwKxAeiuNmCe", // Heroic Elite
-        "prod_T9LTjZp9tDN642": "prod_T9LTjZp9tDN642", // Coach test
+      "prod_T5BhaH9IrB8aSx": "prod_T5BhaH9IrB8aSx", // Heroic Live (tier2)
+      "prod_Khm6LKC72e2PKq": "prod_Khm6LKC72e2PKq", // Heroic Premium
+      "prod_T6eTaEOoW1jH3N": "prod_T6eTaEOoW1jH3N", // Mastery test
+      "prod_RLpwKxAeiuNmCe": "prod_RLpwKxAeiuNmCe", // Heroic Elite
+      "prod_T9LTjZp9tDN642": "prod_T9LTjZp9tDN642", // Coach test
     };
 
     const entitlement = skuToEntitlement[productSku];
@@ -127,21 +144,22 @@ export default async function handler(req, res) {
       }
     }
 
-    // Step 2: Grant RevenueCat entitlement
+    // Step 2: Grant RevenueCat entitlement using V1 API
     // Note: Customer will be created automatically by RevenueCat when granting entitlement
-    const REVENUECAT_SECRET_KEY = "sk_jDIqjivDBkOxfPYAETptVTOIsMDiS";
-    const REVENUECAT_PROJECT_ID = "projfda392bf";
+    const REVENUECAT_V1_API_KEY = "sk_xLwqCozTkMdLOzMjqiccWGaaQjNpZ";
+
     console.log(
       `🎟️ Granting RevenueCat entitlement: ${entitlement} for ${duration}`
     );
 
     const revenueCatResponse = await fetch(
-      `https://api.revenuecat.com/v2/projects/${REVENUECAT_PROJECT_ID}/customers/${encodeURIComponent(firebaseUserId)}/entitlements/${entitlement}/promotional`,
+      `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(firebaseUserId)}/entitlements/${entitlement}/promotional`,
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${REVENUECAT_SECRET_KEY}`,
+          Authorization: `Bearer ${REVENUECAT_V1_API_KEY}`,
           "Content-Type": "application/json",
+          "X-Platform": "stripe",
         },
         body: JSON.stringify({
           duration: duration,
