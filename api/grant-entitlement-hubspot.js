@@ -144,28 +144,64 @@ export default async function handler(req, res) {
       }
     }
 
-    // Step 2: Grant RevenueCat entitlement using V1 API
-    // Note: Customer will be created automatically by RevenueCat when granting entitlement
+    // Step 2: Create subscriber in RevenueCat first
     const REVENUECAT_V1_API_KEY = "sk_xLwqCozTkMdLOzMjqiccWGaaQjNpZ";
 
+    console.log(`👤 Creating RevenueCat subscriber: ${firebaseUserId}`);
+
+    // Create/update subscriber attributes
+    try {
+      await fetch(
+        `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(firebaseUserId)}/attributes`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${REVENUECAT_V1_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            attributes: {
+              $email: { value: email },
+              $displayName: { value: `${firstName} ${lastName}`.trim() },
+            },
+          }),
+        }
+      );
+      console.log(`✅ RevenueCat subscriber created/updated`);
+    } catch (err) {
+      console.log(`⚠️ Subscriber creation warning (continuing anyway):`, err.message);
+    }
+
+    // Step 3: Grant RevenueCat entitlement
     console.log(
       `🎟️ Granting RevenueCat entitlement: ${entitlement} for ${duration}`
     );
 
-    // Calculate end time based on duration
+    // Determine if this is a one-time purchase (Coach) or subscription
+    const isOneTimePurchase = productSku === 'prod_T9LTjZp9tDN642'; // Coach bundle
+
+    // Calculate end time based on purchase type
     const startTime = Date.now();
     let endTime;
 
-    if (duration === 'P1M') {
-      // 1 month = 30 days
-      endTime = startTime + (30 * 24 * 60 * 60 * 1000);
+    if (isOneTimePurchase) {
+      // One-time purchases: 100 years (lifetime access)
+      endTime = startTime + (100 * 365 * 24 * 60 * 60 * 1000);
+      console.log(`🎁 One-time purchase detected - granting lifetime access (100 years)`);
+    } else if (duration === 'P1M') {
+      // Monthly subscription: 35 days (5 day grace period)
+      endTime = startTime + (35 * 24 * 60 * 60 * 1000);
+      console.log(`📅 Monthly subscription - granting 35 days (renewal workflow needed)`);
     } else if (duration === 'P1Y') {
-      // 1 year = 365 days
-      endTime = startTime + (365 * 24 * 60 * 60 * 1000);
+      // Annual subscription: 370 days (5 day grace period)
+      endTime = startTime + (370 * 24 * 60 * 60 * 1000);
+      console.log(`📅 Annual subscription - granting 370 days (renewal workflow needed)`);
     } else {
       // Default to 1 year
       endTime = startTime + (365 * 24 * 60 * 60 * 1000);
     }
+
+    console.log(`⏰ Setting entitlement from ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
 
     const revenueCatResponse = await fetch(
       `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(firebaseUserId)}/entitlements/${entitlement}/promotional`,
