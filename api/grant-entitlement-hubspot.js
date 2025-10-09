@@ -18,19 +18,19 @@
 
 export default async function handler(req, res) {
   // CORS headers
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === "OPTIONS") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     return res.status(200).end();
   }
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method Not Allowed" });
   }
 
   try {
@@ -38,19 +38,21 @@ export default async function handler(req, res) {
       email,
       password,
       firstName,
-      lastName = '',
+      lastName = "",
       productSku,
-      billingPeriod = 'annually',
-      mode = 'stage'
+      billingPeriod = "annually",
+      mode = "stage",
     } = req.body;
 
-    console.log(`📩 Processing entitlement grant for: ${email}, SKU: ${productSku}, Period: ${billingPeriod}`);
+    console.log(
+      `📩 Processing entitlement grant for: ${email}, SKU: ${productSku}, Period: ${billingPeriod}`
+    );
 
     // Validate required fields
     if (!email || !password || !firstName || !productSku) {
       return res.status(400).json({
-        error: 'Missing required fields',
-        required: ['email', 'password', 'firstName', 'productSku']
+        error: "Missing required fields",
+        required: ["email", "password", "firstName", "productSku"],
       });
     }
 
@@ -68,28 +70,31 @@ export default async function handler(req, res) {
     const entitlement = skuToEntitlement[productSku];
     if (!entitlement) {
       return res.status(400).json({
-        error: 'Invalid product SKU',
-        sku: productSku
+        error: "Invalid product SKU",
+        sku: productSku,
       });
     }
 
     // Calculate duration
-    const duration = billingPeriod === 'monthly' ? 'P1M' : 'P1Y';
+    const duration = billingPeriod === "monthly" ? "P1M" : "P1Y";
 
     // Step 1: Create Firebase account using existing endpoint
-    console.log('🔥 Creating Firebase account...');
-    const accountResponse = await fetch('https://hubspot-vercel-chi.vercel.app/api/create-heroic-account', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email,
-        password,
-        firstName,
-        lastName,
-        action: 'signup',
-        mode
-      })
-    });
+    console.log("🔥 Creating Firebase account...");
+    const accountResponse = await fetch(
+      "https://hubspot-vercel-chi.vercel.app/api/create-heroic-account",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          password,
+          firstName,
+          lastName,
+          action: "signup",
+          mode,
+        }),
+      }
+    );
 
     let firebaseUserId = email; // Fallback to email
     let accountCreated = false;
@@ -101,73 +106,81 @@ export default async function handler(req, res) {
       console.log(`✅ Firebase account created: ${firebaseUserId}`);
     } else {
       const errorData = await accountResponse.json();
-      console.log('⚠️ Account creation failed:', errorData.error);
+      console.log("⚠️ Account creation failed:", errorData.error);
 
       // If account already exists, try to sign in to get the userId
-      if (errorData.error?.includes('already exists') || errorData.error?.includes('already-in-use')) {
-        console.log('📧 Account exists, attempting sign-in to get userId...');
+      if (
+        errorData.error?.includes("already exists") ||
+        errorData.error?.includes("already-in-use")
+      ) {
+        console.log("📧 Account exists, attempting sign-in to get userId...");
 
         try {
-          const signinResponse = await fetch('https://hubspot-vercel-chi.vercel.app/api/create-heroic-account', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email,
-              password,
-              action: 'signin',
-              mode
-            })
-          });
+          const signinResponse = await fetch(
+            "https://hubspot-vercel-chi.vercel.app/api/create-heroic-account",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                email,
+                password,
+                action: "signin",
+                mode,
+              }),
+            }
+          );
 
           if (signinResponse.ok) {
             const signinData = await signinResponse.json();
             firebaseUserId = signinData.userId;
             console.log(`✅ Signed in, userId: ${firebaseUserId}`);
           } else {
-            console.log('⚠️ Sign-in failed, using email as userId');
+            console.log("⚠️ Sign-in failed, using email as userId");
           }
         } catch (signinError) {
-          console.log('⚠️ Sign-in error:', signinError.message);
+          console.log("⚠️ Sign-in error:", signinError.message);
         }
       } else {
-        console.log('⚠️ Using email as fallback userId');
+        console.log("⚠️ Using email as fallback userId");
       }
     }
 
     // Step 2: Grant RevenueCat entitlement
     // Note: Customer will be created automatically by RevenueCat when granting entitlement
-    const REVENUECAT_SECRET_KEY = 'sk_jDIqjivDBkOxfPYAETptVTOIsMDiS';
-    const REVENUECAT_PROJECT_ID = 'fda392bf';
-    console.log(`🎟️ Granting RevenueCat entitlement: ${entitlement} for ${duration}`);
+    const REVENUECAT_SECRET_KEY = "sk_jDIqjivDBkOxfPYAETptVTOIsMDiS";
+    const REVENUECAT_PROJECT_ID = "fda392bf";
+    console.log(
+      `🎟️ Granting RevenueCat entitlement: ${entitlement} for ${duration}`
+    );
 
     const revenueCatResponse = await fetch(
       `https://api.revenuecat.com/v2/projects/${REVENUECAT_PROJECT_ID}/customers/${encodeURIComponent(firebaseUserId)}/entitlements/${entitlement}/promotional`,
       {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${REVENUECAT_SECRET_KEY}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${REVENUECAT_SECRET_KEY}`,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           duration: duration,
-          start_time_ms: Date.now()
-        })
+          start_time_ms: Date.now(),
+        }),
       }
     );
 
     if (!revenueCatResponse.ok) {
       const rcError = await revenueCatResponse.json();
-      console.error('❌ RevenueCat API error:', rcError);
+      console.error("❌ RevenueCat API error:", rcError);
       return res.status(500).json({
-        error: 'Failed to grant entitlement',
+        error: "Failed to grant entitlement",
         details: rcError,
         userId: firebaseUserId,
-        accountCreated: accountCreated
+        accountCreated: accountCreated,
       });
     }
 
     const rcData = await revenueCatResponse.json();
-    console.log('✅ RevenueCat entitlement granted:', rcData);
+    console.log("✅ RevenueCat entitlement granted:", rcData);
 
     return res.status(200).json({
       success: true,
@@ -175,14 +188,13 @@ export default async function handler(req, res) {
       entitlement: entitlement,
       duration: duration,
       accountCreated: accountCreated,
-      revenueCatResponse: rcData
+      revenueCatResponse: rcData,
     });
-
   } catch (err) {
-    console.error('❌ Error in grant-entitlement-hubspot:', err);
+    console.error("❌ Error in grant-entitlement-hubspot:", err);
     return res.status(500).json({
-      error: 'Internal Server Error',
-      details: err.message
+      error: "Internal Server Error",
+      details: err.message,
     });
   }
 }
