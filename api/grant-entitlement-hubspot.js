@@ -57,7 +57,8 @@ export default async function handler(req, res) {
     }
 
     // Map Stripe Product SKU to RevenueCat Entitlement Identifier
-    // NOTE: Use the Identifier from RevenueCat Dashboard, NOT the RevenueCatId
+    // NOTE: Use the Identifier from RevenueCat Dashboard Entitlements tab
+    // Go to Product Catalog > Entitlements > Click on entitlement > Copy the "Identifier" field at the TOP
     const skuToEntitlement = {
       "prod_T5BhaH9IrB8aSx": "prod_T5BhaH9IrB8aSx", // Heroic Live (tier2)
       "prod_Khm6LKC72e2PKq": "prod_Khm6LKC72e2PKq", // Heroic Premium
@@ -148,6 +149,7 @@ export default async function handler(req, res) {
     const REVENUECAT_V1_API_KEY = "sk_xLwqCozTkMdLOzMjqiccWGaaQjNpZ";
 
     console.log(`👤 Initializing RevenueCat subscriber: ${firebaseUserId}`);
+    console.log(`🔑 Using entitlement identifier: ${entitlement}`);
 
     // Get subscriber info (this creates the subscriber if it doesn't exist)
     try {
@@ -162,13 +164,15 @@ export default async function handler(req, res) {
       );
 
       if (getSubscriberResponse.ok) {
-        console.log(`✅ RevenueCat subscriber initialized`);
+        const subscriberData = await getSubscriberResponse.json();
+        console.log(`✅ RevenueCat subscriber found:`, JSON.stringify(subscriberData.subscriber?.subscriptions || {}, null, 2));
       } else {
-        console.log(`⚠️ Subscriber GET returned ${getSubscriberResponse.status}, continuing...`);
+        const errorData = await getSubscriberResponse.json();
+        console.log(`⚠️ Subscriber GET returned ${getSubscriberResponse.status}:`, errorData);
       }
 
       // Set subscriber attributes
-      await fetch(
+      const attrResponse = await fetch(
         `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(firebaseUserId)}/attributes`,
         {
           method: "POST",
@@ -184,7 +188,13 @@ export default async function handler(req, res) {
           }),
         }
       );
-      console.log(`✅ Subscriber attributes updated`);
+
+      if (attrResponse.ok) {
+        console.log(`✅ Subscriber attributes updated`);
+      } else {
+        const attrError = await attrResponse.json();
+        console.log(`⚠️ Attribute update failed:`, attrError);
+      }
     } catch (err) {
       console.log(`⚠️ Subscriber initialization warning:`, err.message);
     }
@@ -220,29 +230,25 @@ export default async function handler(req, res) {
 
     console.log(`⏰ Setting entitlement from ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
 
-    const revenueCatResponse = await fetch(
-      `https://api.revenuecat.com/v1/receipts`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${REVENUECAT_V1_API_KEY}`,
-          "Content-Type": "application/json",
-          "X-Platform": "stripe",
-        },
-        body: JSON.stringify({
-          app_user_id: firebaseUserId,
-            fetch_token: `hubspot_${productSku}_${Date.now()}`, // Unique receipt token
-               product_id: entitlement,
-              price: billingPeriod === 'monthly' ? 15.00 : 149.00, // Placeholder prices
-             currency: "USD",
-              is_restore: false,
-                 attributes: {
-                   $email: { value: email },
-                  $displayName: { value: `${firstName} ${lastName}`.trim() },
-                  },
-        }),
-      }
-    );
+    // Grant promotional entitlement
+    // Note: The subscriber MUST exist in RevenueCat before granting promotional entitlements
+    const grantUrl = `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(firebaseUserId)}/entitlements/${encodeURIComponent(entitlement)}/promotional`;
+    const grantPayload = {
+      start_time_ms: startTime,
+      end_time_ms: endTime,
+    };
+
+    console.log(`📤 Grant URL: ${grantUrl}`);
+    console.log(`📤 Grant Payload:`, JSON.stringify(grantPayload, null, 2));
+
+    const revenueCatResponse = await fetch(grantUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${REVENUECAT_V1_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(grantPayload),
+    });
 
     if (!revenueCatResponse.ok) {
       const rcError = await revenueCatResponse.json();
