@@ -42,11 +42,11 @@ export default async function handler(req, res) {
     // NOTE: Use the RevenueCat Entitlement ID (entlXXXXXX), not the identifier name
     // Get these from RevenueCat Dashboard → Entitlements → Click entitlement → "RevenueCatId"
     const skuToEntitlement = {
-      "prod_T5BhaH9IrB8aSx": "entl9c4da114eb", // Heroic Live (tier2)
-      "prod_Khm6LKC72e2PKq": "entld68a5c0f37", // Heroic Premium
-      "prod_T6eTaEOoW1jH3N": "entle2b783743f", // Mastery test
-      "prod_RLpwKxAeiuNmCe": "entlf3db235ea8", // Heroic Elite
-      "prod_T9LTjZp9tDN642": "entl415c67da39", // Coach test
+       "prod_T5BhaH9IrB8aSx": "prod_T5BhaH9IrB8aSx", // Heroic Live (tier2)
+        "prod_Khm6LKC72e2PKq": "prod_Khm6LKC72e2PKq", // Heroic Premium
+        "prod_T6eTaEOoW1jH3N": "prod_T6eTaEOoW1jH3N", // Mastery test
+        "prod_RLpwKxAeiuNmCe": "prod_RLpwKxAeiuNmCe", // Heroic Elite
+        "prod_T9LTjZp9tDN642": "prod_T9LTjZp9tDN642", // Coach test
     };
 
     const entitlement = skuToEntitlement[productSku];
