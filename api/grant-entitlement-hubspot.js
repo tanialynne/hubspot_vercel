@@ -147,10 +147,27 @@ export default async function handler(req, res) {
     // Step 2: Create subscriber in RevenueCat first
     const REVENUECAT_V1_API_KEY = "sk_xLwqCozTkMdLOzMjqiccWGaaQjNpZ";
 
-    console.log(`👤 Creating RevenueCat subscriber: ${firebaseUserId}`);
+    console.log(`👤 Initializing RevenueCat subscriber: ${firebaseUserId}`);
 
-    // Create/update subscriber attributes
+    // Get subscriber info (this creates the subscriber if it doesn't exist)
     try {
+      const getSubscriberResponse = await fetch(
+        `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(firebaseUserId)}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${REVENUECAT_V1_API_KEY}`,
+          },
+        }
+      );
+
+      if (getSubscriberResponse.ok) {
+        console.log(`✅ RevenueCat subscriber initialized`);
+      } else {
+        console.log(`⚠️ Subscriber GET returned ${getSubscriberResponse.status}, continuing...`);
+      }
+
+      // Set subscriber attributes
       await fetch(
         `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(firebaseUserId)}/attributes`,
         {
@@ -167,9 +184,9 @@ export default async function handler(req, res) {
           }),
         }
       );
-      console.log(`✅ RevenueCat subscriber created/updated`);
+      console.log(`✅ Subscriber attributes updated`);
     } catch (err) {
-      console.log(`⚠️ Subscriber creation warning (continuing anyway):`, err.message);
+      console.log(`⚠️ Subscriber initialization warning:`, err.message);
     }
 
     // Step 3: Grant RevenueCat entitlement
