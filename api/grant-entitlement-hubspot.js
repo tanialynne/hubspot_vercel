@@ -149,7 +149,7 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          app_user_id: firebaseUserId,
+          id: firebaseUserId,
           attributes: {
             $email: { value: email },
             $displayName: { value: `${firstName} ${lastName}`.trim() }
