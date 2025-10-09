@@ -91,7 +91,7 @@ export default async function handler(req, res) {
           firstName,
           lastName,
           action: "signup",
-          mode,
+          mode: "live",
         }),
       }
     );
