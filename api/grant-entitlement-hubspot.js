@@ -150,10 +150,10 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify({
           id: firebaseUserId,
-          attributes: {
-            $email: { value: email },
-            $displayName: { value: `${firstName} ${lastName}`.trim() }
-          }
+          attributes: [
+            { key: '$email', value: email },
+            { key: '$displayName', value: `${firstName} ${lastName}`.trim() }
+          ]
         })
       }
     );
