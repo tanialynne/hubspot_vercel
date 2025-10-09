@@ -102,19 +102,73 @@ export default async function handler(req, res) {
       const errorData = await accountResponse.json();
       console.log('⚠️ Account creation failed:', errorData.error);
 
-      // If account already exists, continue with email as userId
-      if (errorData.error?.includes('already exists')) {
-        console.log('📧 Account exists, using email as userId');
+      // If account already exists, try to sign in to get the userId
+      if (errorData.error?.includes('already exists') || errorData.error?.includes('already-in-use')) {
+        console.log('📧 Account exists, attempting sign-in to get userId...');
+
+        try {
+          const signinResponse = await fetch('https://hubspot-vercel-chi.vercel.app/api/create-heroic-account', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email,
+              password,
+              action: 'signin',
+              mode
+            })
+          });
+
+          if (signinResponse.ok) {
+            const signinData = await signinResponse.json();
+            firebaseUserId = signinData.userId;
+            console.log(`✅ Signed in, userId: ${firebaseUserId}`);
+          } else {
+            console.log('⚠️ Sign-in failed, using email as userId');
+          }
+        } catch (signinError) {
+          console.log('⚠️ Sign-in error:', signinError.message);
+        }
       } else {
         console.log('⚠️ Using email as fallback userId');
       }
     }
 
-    // Step 2: Grant RevenueCat entitlement
-    console.log(`🎟️ Granting RevenueCat entitlement: ${entitlement} for ${duration}`);
+    // Step 2: Create or update RevenueCat customer first
+    console.log(`👤 Creating/updating RevenueCat customer: ${firebaseUserId}`);
 
     const REVENUECAT_SECRET_KEY = 'sk_jDIqjivDBkOxfPYAETptVTOIsMDiS';
     const REVENUECAT_PROJECT_ID = 'fda392bf';
+
+    // Create customer in RevenueCat (idempotent - safe to call even if exists)
+    const createCustomerResponse = await fetch(
+      `https://api.revenuecat.com/v2/projects/${REVENUECAT_PROJECT_ID}/customers`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${REVENUECAT_SECRET_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          app_user_id: firebaseUserId,
+          attributes: {
+            $email: { value: email },
+            $displayName: { value: `${firstName} ${lastName}`.trim() }
+          }
+        })
+      }
+    );
+
+    if (!createCustomerResponse.ok && createCustomerResponse.status !== 409) {
+      // 409 = already exists, which is fine
+      const customerError = await createCustomerResponse.json();
+      console.error('⚠️ RevenueCat customer creation warning:', customerError);
+      // Continue anyway - customer might already exist
+    } else {
+      console.log('✅ RevenueCat customer created/exists');
+    }
+
+    // Step 3: Grant RevenueCat entitlement
+    console.log(`🎟️ Granting RevenueCat entitlement: ${entitlement} for ${duration}`);
 
     const revenueCatResponse = await fetch(
       `https://api.revenuecat.com/v2/projects/${REVENUECAT_PROJECT_ID}/customers/${encodeURIComponent(firebaseUserId)}/entitlements/${entitlement}/promotional`,
