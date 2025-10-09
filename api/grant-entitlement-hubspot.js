@@ -40,8 +40,8 @@ export default async function handler(req, res) {
       firstName,
       lastName = "",
       productSku,
-      billingPeriod = "annually",
-      mode = "stage",
+      billingPeriod = "monthly",
+      mode = "live",
     } = req.body;
 
     console.log(
