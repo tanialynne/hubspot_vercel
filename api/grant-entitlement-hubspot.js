@@ -101,9 +101,28 @@ export default async function handler(req, res) {
 
     if (accountResponse.ok) {
       const accountData = await accountResponse.json();
-      firebaseUserId = accountData.userId;
+
+      // IMPORTANT: accountData.userId is a custom DB ID, not the Firebase Auth UID
+      // We need to decode the JWT token to get the real Firebase Auth UID
+      if (accountData.token) {
+        try {
+          // Decode JWT to get Firebase UID (it's in the 'sub' or 'user_id' claim)
+          const tokenParts = accountData.token.split('.');
+          if (tokenParts.length === 3) {
+            const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
+            firebaseUserId = payload.user_id || payload.sub;
+            console.log(`✅ Firebase Auth UID extracted from token: ${firebaseUserId}`);
+            console.log(`   (Custom DB ID was: ${accountData.userId})`);
+          }
+        } catch (err) {
+          console.log(`⚠️ Could not decode token, using DB ID as fallback:`, err.message);
+          firebaseUserId = accountData.userId;
+        }
+      } else {
+        firebaseUserId = accountData.userId;
+      }
+
       accountCreated = true;
-      console.log(`✅ Firebase account created: ${firebaseUserId}`);
     } else {
       const errorData = await accountResponse.json();
       console.log("⚠️ Account creation failed:", errorData.error);
@@ -132,8 +151,24 @@ export default async function handler(req, res) {
 
           if (signinResponse.ok) {
             const signinData = await signinResponse.json();
-            firebaseUserId = signinData.userId;
-            console.log(`✅ Signed in, userId: ${firebaseUserId}`);
+
+            // Extract Firebase UID from token (same as signup)
+            if (signinData.token) {
+              try {
+                const tokenParts = signinData.token.split('.');
+                if (tokenParts.length === 3) {
+                  const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
+                  firebaseUserId = payload.user_id || payload.sub;
+                  console.log(`✅ Signed in, Firebase Auth UID: ${firebaseUserId}`);
+                  console.log(`   (Custom DB ID was: ${signinData.userId})`);
+                }
+              } catch (err) {
+                console.log(`⚠️ Could not decode token, using DB ID:`, err.message);
+                firebaseUserId = signinData.userId;
+              }
+            } else {
+              firebaseUserId = signinData.userId;
+            }
           } else {
             console.log("⚠️ Sign-in failed, using email as userId");
           }
