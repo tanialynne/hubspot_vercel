@@ -152,6 +152,21 @@ export default async function handler(req, res) {
       `🎟️ Granting RevenueCat entitlement: ${entitlement} for ${duration}`
     );
 
+    // Calculate end time based on duration
+    const startTime = Date.now();
+    let endTime;
+
+    if (duration === 'P1M') {
+      // 1 month = 30 days
+      endTime = startTime + (30 * 24 * 60 * 60 * 1000);
+    } else if (duration === 'P1Y') {
+      // 1 year = 365 days
+      endTime = startTime + (365 * 24 * 60 * 60 * 1000);
+    } else {
+      // Default to 1 year
+      endTime = startTime + (365 * 24 * 60 * 60 * 1000);
+    }
+
     const revenueCatResponse = await fetch(
       `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(firebaseUserId)}/entitlements/${entitlement}/promotional`,
       {
@@ -162,8 +177,8 @@ export default async function handler(req, res) {
           "X-Platform": "stripe",
         },
         body: JSON.stringify({
-          duration: duration,
-          start_time_ms: Date.now(),
+          start_time_ms: startTime,
+          end_time_ms: endTime,
         }),
       }
     );
