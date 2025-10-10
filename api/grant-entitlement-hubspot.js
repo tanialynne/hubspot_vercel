@@ -167,56 +167,44 @@ export default async function handler(req, res) {
       const errorData = await accountResponse.json();
       console.log("⚠️ Account creation failed:", errorData.error);
 
-      // If account already exists, try to sign in to get the userId
+      // If account already exists, look up the Firebase UID by email (no password needed!)
       if (
         errorData.error?.includes("already exists") ||
         errorData.error?.includes("already-in-use")
       ) {
-        console.log("📧 Account exists, attempting sign-in to get userId...");
+        console.log("📧 Account exists, looking up Firebase UID by email...");
 
         try {
-          const signinResponse = await fetch(
-            "https://hubspot-vercel-chi.vercel.app/api/create-heroic-account",
+          const lookupResponse = await fetch(
+            "https://hubspot-vercel-chi.vercel.app/api/get-firebase-uid-by-email",
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 email,
-                password,
-                action: "signin",
                 mode: "live",
               }),
             }
           );
 
-          if (signinResponse.ok) {
-            const signinData = await signinResponse.json();
-
-            // Extract Firebase UID from token (same as signup)
-            if (signinData.token) {
-              try {
-                const tokenParts = signinData.token.split('.');
-                if (tokenParts.length === 3) {
-                  const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
-                  firebaseUserId = payload.user_id || payload.sub;
-                  console.log(`✅ Signed in, Firebase Auth UID: ${firebaseUserId}`);
-                  console.log(`   (Custom DB ID was: ${signinData.userId})`);
-                }
-              } catch (err) {
-                console.log(`⚠️ Could not decode token, using DB ID:`, err.message);
-                firebaseUserId = signinData.userId;
-              }
-            } else {
-              firebaseUserId = signinData.userId;
-            }
+          if (lookupResponse.ok) {
+            const lookupData = await lookupResponse.json();
+            firebaseUserId = lookupData.firebaseUid;
+            console.log(`✅ Found existing user - Firebase UID: ${firebaseUserId}`);
+            console.log(`   (User ID: ${lookupData.userId})`);
           } else {
-            console.log("⚠️ Sign-in failed, using email as userId");
+            const lookupError = await lookupResponse.json();
+            console.log("⚠️ Firebase UID lookup failed:", lookupError.error);
+            // Don't fall back to email - let it fail properly
+            throw new Error(`Account exists but could not retrieve Firebase UID: ${lookupError.error}`);
           }
-        } catch (signinError) {
-          console.log("⚠️ Sign-in error:", signinError.message);
+        } catch (lookupError) {
+          console.log("⚠️ UID lookup error:", lookupError.message);
+          throw lookupError; // Re-throw to fail the entire request
         }
       } else {
-        console.log("⚠️ Using email as fallback userId");
+        console.log("⚠️ Account creation failed for unknown reason");
+        throw new Error(`Account creation failed: ${errorData.error}`);
       }
     }
 
