@@ -71,6 +71,7 @@ export default async function handler(req, res) {
       productSku,
       billingPeriod = "monthly",
       mode = "live",
+      existingFirebaseUid, // NEW: Firebase UID from HubSpot contact property
     } = req.body;
 
     console.log(
@@ -118,93 +119,83 @@ export default async function handler(req, res) {
     // Calculate duration
     const duration = billingPeriod === "monthly" ? "P1M" : "P1Y";
 
-    // Step 1: Create Firebase account using existing endpoint
-    console.log("🔥 Creating Firebase account...");
-    const accountResponse = await fetch(
-      "https://hubspot-vercel-chi.vercel.app/api/create-heroic-account",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email,
-          password,
-          firstName,
-          lastName,
-          action: "signup",
-          mode: "live",
-        }),
-      }
-    );
-
-    let firebaseUserId = email; // Fallback to email
+    // Check if we already have the Firebase UID from a previous purchase
+    let firebaseUserId = existingFirebaseUid || null;
     let accountCreated = false;
 
-    if (accountResponse.ok) {
-      const accountData = await accountResponse.json();
+    if (firebaseUserId) {
+      console.log(`✅ Using existing Firebase UID from HubSpot: ${firebaseUserId}`);
+      console.log(`   Skipping account creation - user already exists`);
+    } else {
+      // Step 1: Create Firebase account using existing endpoint
+      console.log("🔥 Creating Firebase account...");
+      const accountResponse = await fetch(
+        "https://hubspot-vercel-chi.vercel.app/api/create-heroic-account",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email,
+            password,
+            firstName,
+            lastName,
+            action: "signup",
+            mode: "live",
+          }),
+        }
+      );
 
-      // IMPORTANT: accountData.userId is a custom DB ID, not the Firebase Auth UID
-      // We need to decode the JWT token to get the real Firebase Auth UID
-      if (accountData.token) {
-        try {
-          // Decode JWT to get Firebase UID (it's in the 'sub' or 'user_id' claim)
-          const tokenParts = accountData.token.split('.');
-          if (tokenParts.length === 3) {
-            const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
-            firebaseUserId = payload.user_id || payload.sub;
-            console.log(`✅ Firebase Auth UID extracted from token: ${firebaseUserId}`);
-            console.log(`   (Custom DB ID was: ${accountData.userId})`);
+      if (accountResponse.ok) {
+        const accountData = await accountResponse.json();
+
+        // IMPORTANT: accountData.userId is a custom DB ID, not the Firebase Auth UID
+        // We need to decode the JWT token to get the real Firebase Auth UID
+        if (accountData.token) {
+          try {
+            // Decode JWT to get Firebase UID (it's in the 'sub' or 'user_id' claim)
+            const tokenParts = accountData.token.split('.');
+            if (tokenParts.length === 3) {
+              const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
+              firebaseUserId = payload.user_id || payload.sub;
+              console.log(`✅ Firebase Auth UID extracted from token: ${firebaseUserId}`);
+              console.log(`   (Custom DB ID was: ${accountData.userId})`);
+            }
+          } catch (err) {
+            console.log(`⚠️ Could not decode token, using DB ID as fallback:`, err.message);
+            firebaseUserId = accountData.userId;
           }
-        } catch (err) {
-          console.log(`⚠️ Could not decode token, using DB ID as fallback:`, err.message);
+        } else {
           firebaseUserId = accountData.userId;
         }
+
+        accountCreated = true;
       } else {
-        firebaseUserId = accountData.userId;
-      }
+        const errorData = await accountResponse.json();
+        console.log("⚠️ Account creation failed:", errorData.error);
 
-      accountCreated = true;
-    } else {
-      const errorData = await accountResponse.json();
-      console.log("⚠️ Account creation failed:", errorData.error);
+        // If account already exists, we can't proceed without the Firebase UID
+        if (
+          errorData.error?.includes("already exists") ||
+          errorData.error?.includes("already-in-use")
+        ) {
+          console.log("⚠️ Account already exists - Cannot grant entitlement without Firebase UID");
+          console.log("💡 Solution: HubSpot workflow should pass existingFirebaseUid from contact property");
 
-      // If account already exists, look up the Firebase UID by email (no password needed!)
-      if (
-        errorData.error?.includes("already exists") ||
-        errorData.error?.includes("already-in-use")
-      ) {
-        console.log("📧 Account exists, looking up Firebase UID by email...");
-
-        try {
-          const lookupResponse = await fetch(
-            "https://hubspot-vercel-chi.vercel.app/api/get-firebase-uid-by-email",
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                email,
-                mode: "live",
-              }),
-            }
-          );
-
-          if (lookupResponse.ok) {
-            const lookupData = await lookupResponse.json();
-            firebaseUserId = lookupData.firebaseUid;
-            console.log(`✅ Found existing user - Firebase UID: ${firebaseUserId}`);
-            console.log(`   (User ID: ${lookupData.userId})`);
-          } else {
-            const lookupError = await lookupResponse.json();
-            console.log("⚠️ Firebase UID lookup failed:", lookupError.error);
-            // Don't fall back to email - let it fail properly
-            throw new Error(`Account exists but could not retrieve Firebase UID: ${lookupError.error}`);
-          }
-        } catch (lookupError) {
-          console.log("⚠️ UID lookup error:", lookupError.message);
-          throw lookupError; // Re-throw to fail the entire request
+          // Return detailed error so HubSpot workflow knows what happened
+          return res.status(409).json({
+            error: "Account already exists",
+            email: email,
+            message: "This email already has a Heroic account. Cannot grant entitlement without Firebase UID.",
+            accountCreated: false,
+            solution: "HubSpot workflow must include the firebase_uid from the contact property in the request"
+          });
+        } else {
+          console.log("⚠️ Account creation failed for unknown reason");
+          return res.status(500).json({
+            error: "Account creation failed",
+            details: errorData.error
+          });
         }
-      } else {
-        console.log("⚠️ Account creation failed for unknown reason");
-        throw new Error(`Account creation failed: ${errorData.error}`);
       }
     }
 
